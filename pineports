@@ -6,7 +6,7 @@ Usage:
   ports kill <port>     stop whatever listens on <port>
   ports -w / --web      serve web UI on :6310 (for LAN/Tailscale)
 """
-import subprocess, os, sys, signal, json, hashlib, secrets, time, shutil, threading
+import subprocess, os, sys, signal, json, hashlib, secrets, time, shutil, threading, socket
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 try:
     from setproctitle import setproctitle
@@ -17,6 +17,7 @@ except ImportError:
 LABELS = os.path.expanduser("~/.config/pineports-labels.conf")
 PIN_FILE = os.path.expanduser("~/.config/pineports-pin")
 WEB_PORT = 6310
+HOST = socket.gethostname()  # self-identify: page + login name the machine it runs on
 
 # new-listener badge: first-seen times per port; badged for 24h unless the
 # port is labeled (declared expected) or ephemeral (VS Code/Firefox pick
@@ -291,9 +292,9 @@ def print_table():
 
 # ---------- web UI ----------
 
-PAGE = """<!DOCTYPE html><html><head><meta charset="utf-8">
+PAGE_TMPL = """<!DOCTYPE html><html><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>PinePorts — GomieAI2</title><style>
+<title>PinePorts — __HOST__</title><style>
 :root{--bg:#111;--fg:#ddd;--dim:#888;--line:#333;--accent:#7ec8e3;--kill:#e57373;
 --killbg:#33222a;--barbg:#222}
 body{font-family:ui-monospace,Menlo,Consolas,monospace;background:var(--bg);color:var(--fg);
@@ -322,7 +323,7 @@ border-radius:3px;vertical-align:middle;margin-left:.35rem;overflow:hidden}
 border:2px solid transparent;display:inline-block}
 #theme span.sel{border-color:var(--fg)}
 </style></head><body>
-<h1>PinePorts — what's running on GomieAI2</h1>
+<h1>PinePorts — what's running on __HOST__</h1>
 <div id=stats></div>
 <div id=theme></div>
 <table id=t><thead><tr>
@@ -419,7 +420,9 @@ document.addEventListener('click',async e=>{
 refresh();setInterval(refresh,5000);
 </script></body></html>"""
 
-LOGIN_PAGE = """<!DOCTYPE html><html><head><meta charset="utf-8">
+PAGE = PAGE_TMPL.replace("__HOST__", HOST)
+
+LOGIN_TMPL = """<!DOCTYPE html><html><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>PinePorts — locked</title><style>
 body{font-family:ui-monospace,Menlo,Consolas,monospace;background:#111;color:#ddd;
@@ -431,7 +434,7 @@ button{background:#1c2b33;color:#7ec8e3;border:1px solid #7ec8e3;border-radius:4
 padding:.5rem 1rem;cursor:pointer;font-family:inherit}
 #err{color:#e57373;margin-top:.8rem;text-align:center}
 </style></head><body><div>
-<h1 style="font-size:1.1rem;color:#7ec8e3">ports — GomieAI2</h1>
+<h1 style="font-size:1.1rem;color:#7ec8e3">ports — __HOST__</h1>
 <form onsubmit="return go(event)"><input id=pin type=password inputmode=numeric
 maxlength=4 autofocus autocomplete=off><button>enter</button></form>
 <div id=err></div></div>
@@ -440,6 +443,8 @@ async function go(e){e.preventDefault();
  const r=await fetch('/api/login',{method:'POST',body:document.getElementById('pin').value});
  if(r.ok){location.reload()}else{document.getElementById('err').textContent='wrong pin'}}
 </script></body></html>"""
+
+LOGIN_PAGE = LOGIN_TMPL.replace("__HOST__", HOST)
 
 class Handler(BaseHTTPRequestHandler):
     def _send(self, code, body, ctype="text/html; charset=utf-8"):
