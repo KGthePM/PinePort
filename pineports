@@ -6,8 +6,8 @@ Usage:
   ports kill <port>     stop whatever listens on <port>
   ports -w / --web      serve web UI on :6310 (for LAN/Tailscale)
 """
-import subprocess, os, sys, signal, json, hashlib, secrets, time, shutil
-from http.server import HTTPServer, BaseHTTPRequestHandler
+import subprocess, os, sys, signal, json, hashlib, secrets, time, shutil, threading
+from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 try:
     from setproctitle import setproctitle
     setproctitle("pineports")
@@ -17,6 +17,13 @@ except ImportError:
 LABELS = os.path.expanduser("~/.config/pineports-labels.conf")
 PIN_FILE = os.path.expanduser("~/.config/pineports-pin")
 WEB_PORT = 6310
+
+# new-listener badge: first-seen times per port; badged for 24h unless the
+# port is labeled (declared expected) or ephemeral (VS Code/Firefox pick
+# random high ports constantly).
+SEEN_FILE = os.path.expanduser("~/.config/pineports-seen.json")
+NEW_WINDOW = 24 * 3600
+EPHEMERAL_MIN = 32768
 
 # ---------- add-ons ----------
 # An add-on is a CLI found on PATH that prints JSON. Found at startup -> its
@@ -29,6 +36,10 @@ def _find_addons():
     if needle:
         a["needle"] = {"cmd": needle, "cached": ["--cached"], "live": [],
                        "timeout": (10, 120)}  # (cached, live) seconds
+    pdock = shutil.which("pineports-docker")
+    if pdock:
+        a["docker"] = {"cmd": pdock, "cached": [], "live": [],
+                       "timeout": (10, 10)}  # local socket, always fast
     return a
 
 ADDONS = _find_addons()
@@ -79,6 +90,43 @@ def ss_out():
         return r.stdout
     return subprocess.run(["/usr/bin/ss", "-tulpn"], capture_output=True, text=True).stdout
 
+_seen_lock = threading.Lock()
+
+def load_seen():
+    try:
+        return json.load(open(SEEN_FILE))
+    except (FileNotFoundError, ValueError):
+        return {}
+
+def save_seen(seen):
+    tmp = SEEN_FILE + ".tmp"
+    with open(tmp, "w") as f:
+        json.dump(seen, f)
+    os.replace(tmp, SEEN_FILE)
+
+def badge_ports(ports, labels):
+    """Mark ports first seen within NEW_WINDOW. Labeled + ephemeral ports are
+    exempt: the first are declared expected, the second appear/disappear
+    constantly (VS Code, Firefox)."""
+    now = time.time()
+    with _seen_lock:
+        seen = load_seen()
+        changed = False
+        badged = []
+        for p in ports:
+            if p not in seen:
+                seen[p] = now
+                changed = True
+            if (now - seen[p] < NEW_WINDOW and p not in labels
+                    and p < EPHEMERAL_MIN):
+                badged.append(p)
+        if changed:
+            try:
+                save_seen(seen)
+            except OSError:
+                pass  # badge state is best-effort
+        return badged
+
 def gather():
     """-> list of dicts: name, pid, rss, ports(list), kind ('user'|'docker'|'system')"""
     labels = load_labels()
@@ -113,7 +161,8 @@ def gather():
         if "docker" in s["name"] or "containerd" in s["name"]:
             kind = "docker"
         out.append({"name": s["name"], "pid": pid, "rss": rss,
-                    "ports": sorted(s["ports"]), "kind": kind})
+                    "ports": sorted(s["ports"]), "kind": kind,
+                    "new": badge_ports(sorted(s["ports"]), labels)})
     # merge same-name entries, keep the one with rss
     merged = {}
     for e in out:
@@ -253,6 +302,8 @@ h1{font-size:1.1rem;color:var(--accent)}table{border-collapse:collapse;width:100
 td,th{padding:.45rem .6rem;text-align:left;border-bottom:1px solid var(--line)}
 th{color:var(--dim);font-weight:normal;font-size:.8rem}
 .mem{text-align:right}.dead{color:var(--kill)}
+.badge{display:inline-block;background:#5a4a1e;color:#e0b34d;border-radius:4px;
+font-size:.7rem;padding:.05rem .4rem;margin-left:.35rem;font-weight:normal}
 button{background:var(--killbg);color:var(--kill);border:1px solid var(--kill);border-radius:4px;
 padding:.15rem .6rem;cursor:pointer;font-family:inherit}
 button:hover{background:var(--kill);color:#fff}
@@ -305,8 +356,9 @@ async function refresh(){
  d.services.forEach(s=>{
   const tr=document.createElement('tr');
   const sys=own.some(o=>s.name.includes(o));
+  const ports=s.ports.map(p=>s.new&&s.new.includes(p)?p+'<span class="badge">new</span>':p).join(', ');
   tr.innerHTML=`<td>${s.name}</td><td class=mem>${s.rss?s.rss.toFixed(0)+' MB':'-'}</td>
-   <td>${s.ports.join(', ')}</td><td>${sys?'':'<button data-p="'+s.ports[0]+'">kill</button>'}</td>`;
+   <td>${ports}</td><td>${sys?'':'<button data-p="'+s.ports[0]+'">kill</button>'}</td>`;
   tb.appendChild(tr);});
  document.querySelector('#msg').textContent=d.services.length+' services, '
   +(d.total/1024).toFixed(1)+' GB RAM — updated '+new Date().toLocaleTimeString();
@@ -335,7 +387,13 @@ const CARD_RENDER={needle:(box,d)=>{
       +(left!=null&&left>0?` · resets in ${fmtLeft(left)}`:'')+`</div>`}).join('')
    +`</div>`}).join('')
   +`<div style="color:var(--dim);font-size:.75rem;margin-top:.3rem">${d._live?'live':'cached'} `
-  +(d.updated?new Date(d.updated*1000).toLocaleTimeString():'')+'</div>';}};
+  +(d.updated?new Date(d.updated*1000).toLocaleTimeString():'')+'</div>';},
+docker:(box,d)=>{
+ if(d.error){box.innerHTML=`<span style="color:var(--kill)">${d.error}</span>`;return}
+ if(!d.containers||!d.containers.length){box.innerHTML='<span style="color:var(--dim)">no containers running</span>';return}
+ box.innerHTML=d.containers.map(c=>`<div style="margin:.3rem 0"><b>${c.Name}</b>`
+  +` <span style="color:var(--dim)">${c.CPUPerc} CPU · ${c.MemUsage}`
+  +`${c.State&&c.State!=='running'?' · <span style="color:var(--kill)">'+c.State+'</span>':''}</span></div>`).join('');}};
 async function loadAddon(name,live){
  const btn=document.querySelector('#addon-'+name+' button');
  if(btn){btn.disabled=true;btn.textContent=live?'…':'refresh';}
@@ -468,7 +526,7 @@ class Handler(BaseHTTPRequestHandler):
 
 def web():
     print(f"ports web UI on http://0.0.0.0:{WEB_PORT}/")
-    HTTPServer(("0.0.0.0", WEB_PORT), Handler).serve_forever()
+    ThreadingHTTPServer(("0.0.0.0", WEB_PORT), Handler).serve_forever()
 
 if __name__ == "__main__":
     if len(sys.argv) >= 2:
