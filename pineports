@@ -374,12 +374,18 @@ applyTheme(theme);
 function fmtLeft(s){if(s==null)return'';const h=Math.floor(s/3600),m=Math.floor(s%3600/60);
  if(s>=86400)return Math.floor(s/86400)+'d '+h%24+'h';
  return h?h+'h '+m+'m':m+'m'}
+function fmtTok(n){n=n||0;return n>999999?(n/1e6).toFixed(1)+'M':n>999?(n/1e3).toFixed(0)+'K':''+n}
 const CARD_RENDER={needle:(box,d)=>{
  if(d.error){box.innerHTML=`<span style="color:var(--kill)">${d.error}</span>`;return}
+ if(!Array.isArray(d.providers)){box.innerHTML='<span style="color:var(--dim)">no data</span>';return}
  box.innerHTML=d.providers.filter(p=>!p.hidden).map(p=>{
   if(!p.ok)return`<div style="margin:.3rem 0"><b>${p.name}</b> <span style="color:var(--dim)">— ${p.error||'unavailable'}</span></div>`;
+  if(p.tally){const t=p.tally;
+   const models=(t.top_models||[]).map(m=>`<div style="padding-left:1rem;color:var(--dim)">${m.model}: ${m.tokens>999999?(m.tokens/1e6).toFixed(1)+'M':m.tokens>999?(m.tokens/1e3).toFixed(0)+'K':m.tokens} tok</div>`).join('');
+   return`<div style="margin:.3rem 0"><b>${p.name}</b>`+
+    `<div style="padding-left:1rem;color:var(--dim)">Today ${fmtTok(t.today)} · Week ${fmtTok(t.week)} · All ${fmtTok(t.all_time)}</div>`+models+`</div>`}
   return`<div style="margin:.3rem 0"><b>${p.name}</b>${p.plan?` <span style="color:var(--dim)">(${p.plan})</span>`:''}`
-   +p.windows.map(w=>{
+   +(p.windows||[]).map(w=>{
      const now=Date.now()/1000;
      const left=w.resets_at!=null?Math.max(w.resets_at-now,0):null;
      const pct=w.used!=null?Math.max(100-Math.min(w.used,100),0):null;
@@ -401,7 +407,7 @@ async function loadAddon(name,live){
  try{const r=await fetch('/api/addon/'+name+(live?'?live=1':''));
   (CARD_RENDER[name]||((b,d)=>b.textContent=JSON.stringify(d)))(
    document.querySelector('#addon-'+name+' .card'),await r.json());}
- catch(e){document.querySelector('#addon-'+name+' .card').textContent='fetch failed'}
+ catch(e){document.querySelector('#addon-'+name+' .card').textContent='error: '+(e&&e.message?e.message:e)}
  if(btn){btn.disabled=false;btn.textContent='refresh';}}
 for(const name of ADDONS){
  const wrap=document.createElement('div');wrap.id='addon-'+name;
