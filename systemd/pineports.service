@@ -1,0 +1,10 @@
+[Unit]
+Description=PinePorts — what's running on this PC (:6310)
+After=network.target
+
+[Service]
+ExecStart=/home/kg/.local/bin/pineports --web
+Restart=on-failure
+
+[Install]
+WantedBy=default.target

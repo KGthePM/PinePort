@@ -1,0 +1,482 @@
+#!/usr/bin/env python3
+"""ports — what's running on this PC: ports, memory, kill, web view.
+
+Usage:
+  ports                 show table
+  ports kill <port>     stop whatever listens on <port>
+  ports -w / --web      serve web UI on :6310 (for LAN/Tailscale)
+"""
+import subprocess, os, sys, signal, json, hashlib, secrets, time, shutil
+from http.server import HTTPServer, BaseHTTPRequestHandler
+try:
+    from setproctitle import setproctitle
+    setproctitle("pineports")
+except ImportError:
+    pass
+
+LABELS = os.path.expanduser("~/.config/pineports-labels.conf")
+PIN_FILE = os.path.expanduser("~/.config/pineports-pin")
+WEB_PORT = 6310
+
+# ---------- add-ons ----------
+# An add-on is a CLI found on PATH that prints JSON. Found at startup -> its
+# card renders and /api/addon/<name> serves it; absent -> quietly skipped.
+# Contract: cmd --cached (instant, no network) and cmd (live; own cooldowns).
+
+def _find_addons():
+    a = {}
+    needle = shutil.which("needle")
+    if needle:
+        a["needle"] = {"cmd": needle, "cached": ["--cached"], "live": [],
+                       "timeout": (10, 120)}  # (cached, live) seconds
+    return a
+
+ADDONS = _find_addons()
+
+def pin_hash():
+    try:
+        return open(PIN_FILE).read().strip()
+    except FileNotFoundError:
+        return None
+
+SESSIONS = set()  # valid auth tokens (in-memory; re-login after restart)
+
+def check_auth(handler):
+    c = handler.headers.get("Cookie", "")
+    for part in c.split(";"):
+        if part.strip().startswith("ports_auth="):
+            return part.strip().split("=", 1)[1] in SESSIONS
+    return False
+
+# ---------- data gathering ----------
+
+def load_labels():
+    m = {}
+    try:
+        for line in open(LABELS):
+            line = line.strip()
+            if line and not line.startswith("#") and ":" in line:
+                port, name = line.split(":", 1)
+                m[int(port.strip())] = name.strip()
+    except FileNotFoundError:
+        pass
+    return m
+
+def mem_mb(pid):
+    try:
+        with open(f"/proc/{pid}/status") as f:
+            for line in f:
+                if line.startswith("VmRSS:"):
+                    return int(line.split()[1]) / 1024
+    except (FileNotFoundError, ProcessLookupError, PermissionError):
+        pass
+    return None
+
+def ss_out():
+    r = subprocess.run(["/usr/bin/sudo", "-n", "/usr/bin/ss", "-tulpn"],
+                       capture_output=True, text=True)
+    if r.returncode == 0:
+        return r.stdout
+    return subprocess.run(["/usr/bin/ss", "-tulpn"], capture_output=True, text=True).stdout
+
+def gather():
+    """-> list of dicts: name, pid, rss, ports(list), kind ('user'|'docker'|'system')"""
+    labels = load_labels()
+    services = {}
+    for line in ss_out().splitlines()[1:]:
+        parts = line.split()
+        if len(parts) < 5 or ("LISTEN" not in line and "UNCONN" not in line):
+            continue
+        addr = parts[4]
+        if addr.startswith("[") and "]" in addr:
+            port = int(addr.rsplit("]", 1)[1].lstrip(":"))
+        else:
+            port = int(addr.rsplit(":", 1)[1])
+        name = pid = ""
+        if "users:" in line:
+            seg = line.split('(("', 1)[1]
+            name = seg.split('"', 1)[0]
+            pid = seg.split("pid=", 1)[1].split(",", 1)[0]
+        if not pid or not pid.isdigit():
+            pid = "0"
+        s = services.setdefault(pid, {"name": name, "ports": set()})
+        s["ports"].add(port)
+        if port in labels:
+            s["name"] = labels[port]
+
+    out = []
+    for pid, s in services.items():
+        if pid == "0" or not s["name"]:
+            continue
+        rss = mem_mb(pid)
+        kind = "user"
+        if "docker" in s["name"] or "containerd" in s["name"]:
+            kind = "docker"
+        out.append({"name": s["name"], "pid": pid, "rss": rss,
+                    "ports": sorted(s["ports"]), "kind": kind})
+    # merge same-name entries, keep the one with rss
+    merged = {}
+    for e in out:
+        k = e["name"]
+        if k in merged:
+            merged[k]["ports"] = sorted(set(merged[k]["ports"]) | set(e["ports"]))
+            if e["rss"] and not merged[k]["rss"]:
+                merged[k]["rss"] = e["rss"]
+                merged[k]["pid"] = e["pid"]
+        else:
+            merged[k] = e
+    return sorted(merged.values(), key=lambda e: -(e["rss"] or 0))
+
+# ---------- system stats ----------
+
+_last_stat = None  # (t, idle_ticks, total_ticks) for cpu delta between polls
+
+def cpu_pct():
+    """CPU busy % between the last two calls (web UI polls every 5s)."""
+    global _last_stat
+    with open("/proc/stat") as f:
+        nums = list(map(int, f.readline().split()[1:]))
+    idle = nums[3] + (nums[4] if len(nums) > 4 else 0)
+    total = sum(nums)
+    now = time.time()
+    pct = 0.0
+    if _last_stat:
+        didle, dtotal = idle - _last_stat[1], total - _last_stat[2]
+        if dtotal > 0:
+            pct = 100.0 * (1.0 - didle / dtotal)
+    _last_stat = (now, idle, total)
+    return round(pct, 1)
+
+def sys_stats():
+    mi = {}
+    with open("/proc/meminfo") as f:
+        for line in f:
+            k, v = line.split(":", 1)
+            mi[k] = int(v.strip().split()[0])  # kB
+    total, avail = mi["MemTotal"], mi["MemAvailable"]
+    used = total - avail
+    st = os.statvfs("/")
+    disk_pct = 100.0 * (1.0 - st.f_bavail / st.f_blocks)
+    up = int(float(open("/proc/uptime").read().split()[0]))
+    d, rem = divmod(up, 86400)
+    h, m = divmod(rem, 3600)
+    m //= 60
+    return {
+        "ram_pct": round(100.0 * used / total, 1),
+        "ram_used": round(used / 1048576, 1), "ram_total": round(total / 1048576, 1),
+        "cpu_pct": cpu_pct(), "disk_pct": round(disk_pct, 1),
+        "disk_free": round(st.f_bavail * st.f_frsize / 2**30, 0),
+        "uptime": f"{d}d {h}h {m}m" if d else f"{h}h {m}m",
+        "load1": round(os.getloadavg()[0], 2),
+    }
+
+# ---------- kill ----------
+
+def docker_container_for_port(port):
+    """container id publishing <port>, or None"""
+    r = subprocess.run(["/usr/bin/docker", "ps", "-q"],
+                       capture_output=True, text=True)
+    if r.returncode != 0:
+        return None
+    for cid in r.stdout.split():
+        ins = subprocess.run(["/usr/bin/docker", "inspect", "--format",
+                              "{{json .NetworkSettings.Ports}}", cid],
+                             capture_output=True, text=True).stdout
+        if f'"HostPort":"{port}"' in ins.replace(" ", ""):
+            return cid
+    return None
+
+def kill_port(port):
+    port = int(port)
+    # docker-published port?
+    cid = docker_container_for_port(port)
+    if cid:
+        name = subprocess.run(["/usr/bin/docker", "inspect", "--format",
+                               "{{.Name}}", cid], capture_output=True,
+                              text=True).stdout.strip()
+        r = subprocess.run(["/usr/bin/docker", "stop", "--timeout", "5", cid],
+                           capture_output=True, text=True)
+        return (f"stopped docker container {name} (was publishing :{port})"
+                if r.returncode == 0 else f"docker stop failed: {r.stderr.strip()}")
+
+    # local process
+    for line in ss_out().splitlines():
+        parts = line.split()
+        if len(parts) > 4 and "users:" in line:
+            addr = parts[4]
+            if addr.startswith("["):
+                p = addr.rsplit("]", 1)[-1].lstrip(":")
+            else:
+                bits = addr.rsplit(":", 1)
+                p = bits[1] if len(bits) == 2 else ""
+            if p == str(port):
+                seg = line.split('(("', 1)[1]
+                name = seg.split('"', 1)[0]
+                pid = seg.split("pid=", 1)[1].split(",", 1)[0]
+                try:
+                    os.kill(int(pid), signal.SIGTERM)
+                    return f"sent SIGTERM to {name} (pid {pid}) on :{port}"
+                except ProcessLookupError:
+                    return f"pid {pid} already gone"
+                except PermissionError:
+                    r = subprocess.run(["/usr/bin/sudo", "-n", "/usr/bin/kill",
+                                        pid], capture_output=True, text=True)
+                    if r.returncode == 0:
+                        return f"sent SIGTERM to {name} (pid {pid}) on :{port} (root)"
+                    return f"no permission to kill pid {pid} (system service?)"
+    return f"nothing listening on :{port}"
+
+# ---------- CLI table ----------
+
+def print_table():
+    print(f"{'SERVICE':<24} {'MEM':>8}  PORTS")
+    print("-" * 66)
+    total = 0
+    for e in gather():
+        mem = f"{e['rss']:.0f} MB" if e["rss"] else "-"
+        if e["rss"]:
+            total += e["rss"]
+        print(f"{e['name'][:24]:<24} {mem:>8}  {', '.join(map(str, e['ports']))}")
+    print("-" * 66)
+    print(f"{len(gather())} services, {total/1024:.1f} GB RAM total")
+
+# ---------- web UI ----------
+
+PAGE = """<!DOCTYPE html><html><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>PinePorts — GomieAI2</title><style>
+:root{--bg:#111;--fg:#ddd;--dim:#888;--line:#333;--accent:#7ec8e3;--kill:#e57373;
+--killbg:#33222a;--barbg:#222}
+body{font-family:ui-monospace,Menlo,Consolas,monospace;background:var(--bg);color:var(--fg);
+max-width:760px;margin:2rem auto;padding:0 1rem}
+h1{font-size:1.1rem;color:var(--accent)}table{border-collapse:collapse;width:100%}
+td,th{padding:.45rem .6rem;text-align:left;border-bottom:1px solid var(--line)}
+th{color:var(--dim);font-weight:normal;font-size:.8rem}
+.mem{text-align:right}.dead{color:var(--kill)}
+button{background:var(--killbg);color:var(--kill);border:1px solid var(--kill);border-radius:4px;
+padding:.15rem .6rem;cursor:pointer;font-family:inherit}
+button:hover{background:var(--kill);color:#fff}
+#msg{margin-top:1rem;color:var(--accent);min-height:1.2rem}
+/* stats bar */
+#stats{display:flex;flex-wrap:wrap;gap:.4rem 1.4rem;padding:.6rem .8rem;margin:0 0 1.2rem;
+border:1px solid var(--line);border-radius:6px;font-size:.85rem}
+#stats b{color:var(--accent);font-weight:normal}
+.meter{display:inline-block;width:5.5rem;height:.45rem;background:var(--barbg);
+border-radius:3px;vertical-align:middle;margin-left:.35rem;overflow:hidden}
+.meter i{display:block;height:100%;background:var(--accent);border-radius:3px}
+.warn i{background:#e0b34d}.crit i{background:var(--kill)}
+/* theme picker */
+#theme{display:flex;gap:.45rem;margin:-.6rem 0 1rem}
+#theme span{width:1.15rem;height:1.15rem;border-radius:50%;cursor:pointer;
+border:2px solid transparent;display:inline-block}
+#theme span.sel{border-color:var(--fg)}
+</style></head><body>
+<h1>PinePorts — what's running on GomieAI2</h1>
+<div id=stats></div>
+<div id=theme></div>
+<table id=t><thead><tr>
+<th>SERVICE</th><th class=mem>MEM</th><th>PORTS</th><th></th></tr></thead>
+<tbody></tbody></table><div id=msg></div>
+<div id=addons></div>
+<script>
+const ADDONS=__ADDONS__;
+const own=['cupsd','avahi-daemon','tailscaled','systemd','AdGuardHome'];
+const THEMES={midnight:{bg:'#111',fg:'#ddd',dim:'#888',line:'#333',accent:'#7ec8e3',kill:'#e57373',killbg:'#33222a',barbg:'#222'},
+forest:{bg:'#0e1512',fg:'#d6e5dd',dim:'#7a8a80',line:'#2a3a32',accent:'#7ec8a0',kill:'#e57373',killbg:'#33222a',barbg:'#1a2620'},
+paper:{bg:'#f5f3ee',fg:'#333',dim:'#888',line:'#ddd6c8',accent:'#2e6e8e',kill:'#b34747',killbg:'#f0dede',barbg:'#e4e0d5'},
+plum:{bg:'#161019',fg:'#e3d9e6',dim:'#8f8396',line:'#372c3c',accent:'#c39bd3',kill:'#e57373',killbg:'#33222a',barbg:'#241b28'}};
+let theme=localStorage.getItem('pp_theme')||'midnight';
+function applyTheme(t){theme=t;localStorage.setItem('pp_theme',t);
+ const s=document.documentElement.style;
+ for(const[k,v]of Object.entries(THEMES[t]))s.setProperty('--'+k,v);
+ document.querySelectorAll('#theme span').forEach(el=>el.classList.toggle('sel',el.dataset.t===t));}
+function meter(pct){const cls=pct>90?'crit':pct>75?'warn':'';
+ return `<span class="meter ${cls}"><i style="width:${Math.min(pct,100)}%"></i></span>`}
+async function refresh(){
+ const r=await fetch('/api/services');const d=await r.json();
+ const st=d.stats;
+ document.querySelector('#stats').innerHTML=
+  `<span>CPU <b>${st.cpu_pct}%</b>${meter(st.cpu_pct)}</span>`+
+  `<span>RAM <b>${st.ram_used}/${st.ram_total}G</b> <b>${st.ram_pct}%</b>${meter(st.ram_pct)}</span>`+
+  `<span>DISK <b>${st.disk_pct}%</b>${meter(st.disk_pct)}</b></span>`+
+  `<span>free <b>${st.disk_free}G</b></span>`+
+  `<span>load <b>${st.load1}</b></span><span>up <b>${st.uptime}</b></span>`;
+ const tb=document.querySelector('#t tbody');tb.innerHTML='';
+ d.services.forEach(s=>{
+  const tr=document.createElement('tr');
+  const sys=own.some(o=>s.name.includes(o));
+  tr.innerHTML=`<td>${s.name}</td><td class=mem>${s.rss?s.rss.toFixed(0)+' MB':'-'}</td>
+   <td>${s.ports.join(', ')}</td><td>${sys?'':'<button data-p="'+s.ports[0]+'">kill</button>'}</td>`;
+  tb.appendChild(tr);});
+ document.querySelector('#msg').textContent=d.services.length+' services, '
+  +(d.total/1024).toFixed(1)+' GB RAM — updated '+new Date().toLocaleTimeString();
+}
+/* build theme dots */
+const tdiv=document.querySelector('#theme');
+for(const t of Object.keys(THEMES)){const el=document.createElement('span');
+ el.dataset.t=t;el.title=t;
+ el.style.background=THEMES[t].accent;el.onclick=()=>applyTheme(t);tdiv.appendChild(el);}
+applyTheme(theme);
+/* add-ons — each registered one gets a card; built generically */
+function fmtLeft(s){if(s==null)return'';const h=Math.floor(s/3600),m=Math.floor(s%3600/60);
+ if(s>=86400)return Math.floor(s/86400)+'d '+h%24+'h';
+ return h?h+'h '+m+'m':m+'m'}
+const CARD_RENDER={needle:(box,d)=>{
+ if(d.error){box.innerHTML=`<span style="color:var(--kill)">${d.error}</span>`;return}
+ box.innerHTML=d.providers.filter(p=>!p.hidden).map(p=>{
+  if(!p.ok)return`<div style="margin:.3rem 0"><b>${p.name}</b> <span style="color:var(--dim)">— ${p.error||'unavailable'}</span></div>`;
+  return`<div style="margin:.3rem 0"><b>${p.name}</b>${p.plan?` <span style="color:var(--dim)">(${p.plan})</span>`:''}`
+   +p.windows.map(w=>{
+     const now=Date.now()/1000;
+     const left=w.resets_at!=null?Math.max(w.resets_at-now,0):null;
+     const pct=w.used!=null?Math.max(100-Math.min(w.used,100),0):null;
+     return`<div style="padding-left:1rem;color:var(--dim)">${w.label}: `
+      +(pct!=null?`<b style="color:var(--fg)">${pct.toFixed(0)}% left</b>${meter(pct)}`:(w.detail||''))
+      +(left!=null&&left>0?` · resets in ${fmtLeft(left)}`:'')+`</div>`}).join('')
+   +`</div>`}).join('')
+  +`<div style="color:var(--dim);font-size:.75rem;margin-top:.3rem">${d._live?'live':'cached'} `
+  +(d.updated?new Date(d.updated*1000).toLocaleTimeString():'')+'</div>';}};
+async function loadAddon(name,live){
+ const btn=document.querySelector('#addon-'+name+' button');
+ if(btn){btn.disabled=true;btn.textContent=live?'…':'refresh';}
+ try{const r=await fetch('/api/addon/'+name+(live?'?live=1':''));
+  (CARD_RENDER[name]||((b,d)=>b.textContent=JSON.stringify(d)))(
+   document.querySelector('#addon-'+name+' .card'),await r.json());}
+ catch(e){document.querySelector('#addon-'+name+' .card').textContent='fetch failed'}
+ if(btn){btn.disabled=false;btn.textContent='refresh';}}
+for(const name of ADDONS){
+ const wrap=document.createElement('div');wrap.id='addon-'+name;
+ wrap.innerHTML=`<h2 style="font-size:.95rem;color:var(--accent);margin:1.6rem 0 .4rem">${name==='needle'?'AI usage':name}
+  <button style="background:var(--killbg);color:var(--accent);border-color:var(--accent);font-size:.75rem;padding:.1rem .5rem">refresh</button></h2>
+  <div class=card style="font-size:.85rem"></div>`;
+ wrap.querySelector('button').onclick=()=>loadAddon(name,true);
+ document.querySelector('#addons').appendChild(wrap);
+ loadAddon(name,false);}
+document.addEventListener('click',async e=>{
+ const b=e.target.closest('button[data-p]');if(!b)return;
+ if(!confirm('kill everything on port '+b.dataset.p+'?'))return;
+ const r=await fetch('/api/kill',{method:'POST',body:b.dataset.p});
+ document.querySelector('#msg').textContent=await r.text();
+ setTimeout(refresh,1500);});
+refresh();setInterval(refresh,5000);
+</script></body></html>"""
+
+LOGIN_PAGE = """<!DOCTYPE html><html><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>PinePorts — locked</title><style>
+body{font-family:ui-monospace,Menlo,Consolas,monospace;background:#111;color:#ddd;
+display:flex;align-items:center;justify-content:center;min-height:100vh}
+form{display:flex;gap:.5rem}input{background:#222;color:#ddd;border:1px solid #444;
+border-radius:4px;padding:.5rem;font-size:1.2rem;width:8ch;text-align:center;
+letter-spacing:.3em;font-family:inherit}
+button{background:#1c2b33;color:#7ec8e3;border:1px solid #7ec8e3;border-radius:4px;
+padding:.5rem 1rem;cursor:pointer;font-family:inherit}
+#err{color:#e57373;margin-top:.8rem;text-align:center}
+</style></head><body><div>
+<h1 style="font-size:1.1rem;color:#7ec8e3">ports — GomieAI2</h1>
+<form onsubmit="return go(event)"><input id=pin type=password inputmode=numeric
+maxlength=4 autofocus autocomplete=off><button>enter</button></form>
+<div id=err></div></div>
+<script>
+async function go(e){e.preventDefault();
+ const r=await fetch('/api/login',{method:'POST',body:document.getElementById('pin').value});
+ if(r.ok){location.reload()}else{document.getElementById('err').textContent='wrong pin'}}
+</script></body></html>"""
+
+class Handler(BaseHTTPRequestHandler):
+    def _send(self, code, body, ctype="text/html; charset=utf-8"):
+        self.send_response(code)
+        self.send_header("Content-Type", ctype)
+        self.end_headers()
+        self.wfile.write(body.encode() if isinstance(body, str) else body)
+
+    def do_GET(self):
+        if not check_auth(self):
+            self._send(200, LOGIN_PAGE)
+            return
+        if self.path == "/" or self.path.startswith("/index"):
+            self._send(200, PAGE.replace("__ADDONS__", json.dumps(sorted(ADDONS))))
+        elif self.path == "/api/services":
+            g = gather()
+            self._send(200, json.dumps(
+                {"services": g, "total": sum(e["rss"] or 0 for e in g),
+                 "stats": sys_stats()}),
+                "application/json")
+        elif self.path.startswith("/api/addon/"):
+            rest = self.path[len("/api/addon/"):]
+            name, _, query = rest.partition("?")
+            if name not in ADDONS:
+                self._send(404, json.dumps({"error": "unknown add-on"}),
+                           "application/json")
+                return
+            ad = ADDONS[name]
+            live = "live=1" in query
+            cmd = [ad["cmd"]] + (ad["live"] if live else ad["cached"])
+            t_cached, t_live = ad["timeout"]
+            try:
+                r = subprocess.run(cmd, capture_output=True, text=True,
+                                   timeout=t_live if live else t_cached)
+                if r.returncode != 0:
+                    self._send(500, json.dumps(
+                        {"error": r.stderr.strip() or "add-on failed"}),
+                        "application/json")
+                    return
+                data = json.loads(r.stdout)
+                data["_live"] = live
+                self._send(200, json.dumps(data), "application/json")
+            except subprocess.TimeoutExpired:
+                self._send(504, json.dumps({"error": "add-on timed out"}),
+                           "application/json")
+            except (json.JSONDecodeError, OSError) as ex:
+                self._send(500, json.dumps({"error": str(ex)}),
+                           "application/json")
+        else:
+            self._send(404, "not found", "text/plain")
+
+    def do_POST(self):
+        if self.path == "/api/login":
+            n = int(self.headers.get("Content-Length", 0))
+            pin = self.rfile.read(n).decode().strip()
+            want = pin_hash()
+            if want and secrets.compare_digest(
+                    hashlib.sha256(pin.encode()).hexdigest(), want):
+                tok = secrets.token_hex(32)
+                SESSIONS.add(tok)
+                self.send_response(200)
+                self.send_header("Set-Cookie",
+                                 f"ports_auth={tok}; Path=/; Max-Age=2592000; HttpOnly")
+                self.end_headers()
+            else:
+                time.sleep(1)  # slow down brute force
+                self._send(403, "wrong pin", "text/plain")
+            return
+        if not check_auth(self):
+            self._send(403, "not authorized", "text/plain")
+            return
+        if self.path == "/api/kill":
+            n = int(self.headers.get("Content-Length", 0))
+            port = self.rfile.read(n).decode().strip()
+            if not port.isdigit():
+                self._send(400, "bad port", "text/plain")
+                return
+            self._send(200, kill_port(port), "text/plain")
+        else:
+            self._send(404, "not found", "text/plain")
+
+    def log_message(self, *a):
+        pass
+
+def web():
+    print(f"ports web UI on http://0.0.0.0:{WEB_PORT}/")
+    HTTPServer(("0.0.0.0", WEB_PORT), Handler).serve_forever()
+
+if __name__ == "__main__":
+    if len(sys.argv) >= 2:
+        if sys.argv[1] in ("-w", "--web"):
+            web()
+        elif sys.argv[1] == "kill" and len(sys.argv) >= 3:
+            print(kill_port(sys.argv[2]))
+        else:
+            print(__doc__)
+    else:
+        print_table()

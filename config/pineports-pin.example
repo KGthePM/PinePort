@@ -1,0 +1,3 @@
+sha256 of PIN (no trailing newline) — regenerate per machine:
+  printf '%s' 'NEWPIN' | sha256sum | cut -d" " -f1 > ~/.config/pineports-pin
+chmod 600 ~/.config/pineports-pin

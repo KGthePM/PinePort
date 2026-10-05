@@ -1,0 +1,3 @@
+#!/bin/sh
+# pineports (formerly ports) — see /home/kg/.local/bin/pineports
+exec /home/kg/.local/bin/pineports "$@"
