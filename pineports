@@ -31,13 +31,23 @@ EPHEMERAL_MIN = 32768
 # card renders and /api/addon/<name> serves it; absent -> quietly skipped.
 # Contract: cmd --cached (instant, no network) and cmd (live; own cooldowns).
 
+def _addon_cmd(name):
+    """Resolve an add-on CLI. PATH first (normal case), then the known user
+    install dir — a boot-time systemd user manager has no ~/.local/bin on
+    PATH until a desktop session imports its environment."""
+    hit = shutil.which(name)
+    if hit:
+        return hit
+    fallback = os.path.join(os.path.expanduser("~/.local/bin"), name)
+    return fallback if os.access(fallback, os.X_OK) else None
+
 def _find_addons():
     a = {}
-    needle = shutil.which("needle")
+    needle = _addon_cmd("needle")
     if needle:
         a["needle"] = {"cmd": needle, "cached": ["--cached"], "live": [],
                        "timeout": (10, 120)}  # (cached, live) seconds
-    pdock = shutil.which("pineports-docker")
+    pdock = _addon_cmd("pineports-docker")
     if pdock:
         a["docker"] = {"cmd": pdock, "cached": [], "live": [],
                        "timeout": (10, 10)}  # local socket, always fast
