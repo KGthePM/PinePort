@@ -1,13 +1,15 @@
 # PinePort
 
-Listener overview for GomieAI2 — what's running, on which ports, how much RAM it's eating — plus one-keystroke kills. Née `ports`, renamed `pineports`.
+Listener overview for the Linux box it runs on — what's running, on which ports, how much RAM it's eating — plus one-keystroke kills. Née `ports`, renamed `pineports`.
+
+![PinePort web UI](docs/screenshot.png)
 
 ## What it does
 
 - `pineports` — CLI table: name, RSS, ports, sorted by memory
 - `pineports kill <port>` — SIGTERM. Docker-published ports stop the container; root-owned pids use passwordless `sudo kill` (sudoers rule `/etc/sudoers.d/ports`: only `/usr/bin/ss -tulpn` and `/usr/bin/kill`, NOPASSWD)
 - `pineports --web` — web UI on `:6310` (systemd user service `pineports`, enabled)
-  - Reachable LAN-wide and via Tailscale at http://gomieai2:6310
+  - Reachable LAN-wide and via Tailscale at `http://<hostname>:6310`; the page and login screen show the machine's hostname
   - Kill buttons hidden for system services (cupsd, avahi, tailscaled, AdGuardHome, systemd)
   - Stats bar: CPU/RAM/disk % with meters, load, uptime — read from `/proc` per poll, no daemons
   - Theme picker: midnight/forest/paper/plum (CSS vars, saved in localStorage `pp_theme`)
@@ -41,7 +43,7 @@ kg ALL=(root) NOPASSWD: /usr/bin/ss -tulpn, /usr/bin/kill
 
 ## Notes
 
-- Single-threaded server — a live add-on call (~seconds) briefly blocks the 5s table poll. Fine for personal use.
+- Threaded server (`ThreadingHTTPServer`) — a slow live add-on call (~seconds) no longer blocks the 5s table poll.
 - Sessions in-memory (restart = re-login), 30-day cookie, 1s delay on wrong PIN. All endpoints gated, incl. `/api/services`.
 - Friendly port labels live in `~/.config/pineports-labels.conf` (`<port>: <label>`).
 - Docker services show tiny RSS (only the ipv4/ipv6 proxy is visible) — `docker stats --no-stream` for real usage.
