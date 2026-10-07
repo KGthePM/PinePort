@@ -63,6 +63,33 @@ def pin_hash():
 
 SESSIONS = set()  # valid auth tokens (in-memory; re-login after restart)
 
+# Login throttle is global, not per-request: the threaded server would let
+# parallel guesses each sleep on their own thread, so a 4-digit PIN falls in
+# minutes. After LOGIN_MAX_FAILS wrong PINs, all logins wait LOGIN_LOCKOUT.
+LOGIN_MAX_FAILS = 5
+LOGIN_LOCKOUT = 300
+_login_lock = threading.Lock()
+_login_fails = 0
+_login_locked_until = 0.0
+
+def try_login(pin):
+    """-> 'ok' | 'wrong' | 'locked'. Check + count under one lock so
+    concurrent guesses can't slip past the limit."""
+    global _login_fails, _login_locked_until
+    with _login_lock:
+        if time.time() < _login_locked_until:
+            return "locked"
+        want = pin_hash()
+        if want and secrets.compare_digest(
+                hashlib.sha256(pin.encode()).hexdigest(), want):
+            _login_fails = 0
+            return "ok"
+        _login_fails += 1
+        if _login_fails >= LOGIN_MAX_FAILS:
+            _login_fails = 0
+            _login_locked_until = time.time() + LOGIN_LOCKOUT
+        return "wrong"
+
 def check_auth(handler):
     c = handler.headers.get("Cookie", "")
     for part in c.split(";"):
@@ -93,6 +120,18 @@ def mem_mb(pid):
     except (FileNotFoundError, ProcessLookupError, PermissionError):
         pass
     return None
+
+def cmdline(pid):
+    try:
+        with open(f"/proc/{pid}/cmdline", "rb") as f:
+            return f.read().replace(b"\0", b" ").decode(errors="replace").strip()[:300]
+    except (FileNotFoundError, ProcessLookupError, PermissionError):
+        return ""
+
+def _is_loopback(host):
+    host = host.split("%", 1)[0].strip("[]")
+    return host.startswith("127.") or host in ("::1", "localhost") \
+        or host.startswith("::ffff:127.")
 
 def ss_out():
     r = subprocess.run(["/usr/bin/sudo", "-n", "/usr/bin/ss", "-tulpn"],
@@ -139,7 +178,8 @@ def badge_ports(ports, labels):
         return badged
 
 def gather():
-    """-> list of dicts: name, pid, rss, ports(list), kind ('user'|'docker'|'system')"""
+    """-> list of dicts, one per pid: name, pid, rss, cmd, ports(list),
+    links (tcp ports reachable off-box), kind ('user'|'docker'), new"""
     labels = load_labels()
     services = {}
     for line in ss_out().splitlines()[1:]:
@@ -147,10 +187,8 @@ def gather():
         if len(parts) < 5 or ("LISTEN" not in line and "UNCONN" not in line):
             continue
         addr = parts[4]
-        if addr.startswith("[") and "]" in addr:
-            port = int(addr.rsplit("]", 1)[1].lstrip(":"))
-        else:
-            port = int(addr.rsplit(":", 1)[1])
+        host, _, port = addr.rpartition(":")
+        port = int(port)
         name = pid = ""
         if "users:" in line:
             seg = line.split('(("', 1)[1]
@@ -158,8 +196,10 @@ def gather():
             pid = seg.split("pid=", 1)[1].split(",", 1)[0]
         if not pid or not pid.isdigit():
             pid = "0"
-        s = services.setdefault(pid, {"name": name, "ports": set()})
+        s = services.setdefault(pid, {"name": name, "ports": set(), "links": set()})
         s["ports"].add(port)
+        if parts[0] == "tcp" and not _is_loopback(host):
+            s["links"].add(port)
         if port in labels:
             s["name"] = labels[port]
 
@@ -172,20 +212,13 @@ def gather():
         if "docker" in s["name"] or "containerd" in s["name"]:
             kind = "docker"
         out.append({"name": s["name"], "pid": pid, "rss": rss,
-                    "ports": sorted(s["ports"]), "kind": kind,
+                    "cmd": cmdline(pid),
+                    "ports": sorted(s["ports"]), "links": sorted(s["links"]),
+                    "kind": kind,
                     "new": badge_ports(sorted(s["ports"]), labels)})
-    # merge same-name entries, keep the one with rss
-    merged = {}
-    for e in out:
-        k = e["name"]
-        if k in merged:
-            merged[k]["ports"] = sorted(set(merged[k]["ports"]) | set(e["ports"]))
-            if e["rss"] and not merged[k]["rss"]:
-                merged[k]["rss"] = e["rss"]
-                merged[k]["pid"] = e["pid"]
-        else:
-            merged[k] = e
-    return sorted(merged.values(), key=lambda e: -(e["rss"] or 0))
+    # one row per pid, no merging by name: two `node` servers are two rows,
+    # each with its own RAM and a kill button that hits that pid
+    return sorted(out, key=lambda e: -(e["rss"] or 0))
 
 # ---------- system stats ----------
 
@@ -292,13 +325,14 @@ def print_table():
     print(f"{'SERVICE':<24} {'MEM':>8}  PORTS")
     print("-" * 66)
     total = 0
-    for e in gather():
+    rows = gather()
+    for e in rows:
         mem = f"{e['rss']:.0f} MB" if e["rss"] else "-"
         if e["rss"]:
             total += e["rss"]
         print(f"{e['name'][:24]:<24} {mem:>8}  {', '.join(map(str, e['ports']))}")
     print("-" * 66)
-    print(f"{len(gather())} services, {total/1024:.1f} GB RAM total")
+    print(f"{len(rows)} services, {total/1024:.1f} GB RAM total")
 
 # ---------- web UI ----------
 
@@ -312,7 +346,7 @@ max-width:760px;margin:2rem auto;padding:0 1rem}
 h1{font-size:1.1rem;color:var(--accent)}table{border-collapse:collapse;width:100%}
 td,th{padding:.45rem .6rem;text-align:left;border-bottom:1px solid var(--line)}
 th{color:var(--dim);font-weight:normal;font-size:.8rem}
-.mem{text-align:right}.dead{color:var(--kill)}
+.mem{text-align:right}a{color:var(--accent)}td[title]{cursor:help}.dead{color:var(--kill)}
 .badge{display:inline-block;background:#5a4a1e;color:#e0b34d;border-radius:4px;
 font-size:.7rem;padding:.05rem .4rem;margin-left:.35rem;font-weight:normal}
 button{background:var(--killbg);color:var(--kill);border:1px solid var(--kill);border-radius:4px;
@@ -342,6 +376,7 @@ border:2px solid transparent;display:inline-block}
 <div id=addons></div>
 <script>
 const ADDONS=__ADDONS__;
+const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]);
 const own=['cupsd','avahi-daemon','tailscaled','systemd','AdGuardHome'];
 const THEMES={midnight:{bg:'#111',fg:'#ddd',dim:'#888',line:'#333',accent:'#7ec8e3',kill:'#e57373',killbg:'#33222a',barbg:'#222'},
 forest:{bg:'#0e1512',fg:'#d6e5dd',dim:'#7a8a80',line:'#2a3a32',accent:'#7ec8a0',kill:'#e57373',killbg:'#33222a',barbg:'#1a2620'},
@@ -367,9 +402,11 @@ async function refresh(){
  d.services.forEach(s=>{
   const tr=document.createElement('tr');
   const sys=own.some(o=>s.name.includes(o));
-  const ports=s.ports.map(p=>s.new&&s.new.includes(p)?p+'<span class="badge">new</span>':p).join(', ');
-  tr.innerHTML=`<td>${s.name}</td><td class=mem>${s.rss?s.rss.toFixed(0)+' MB':'-'}</td>
-   <td>${ports}</td><td>${sys?'':'<button data-p="'+s.ports[0]+'">kill</button>'}</td>`;
+  const ports=s.ports.map(p=>{
+   const t=(s.links||[]).includes(p)?`<a href="http://${location.hostname}:${p}/" target=_blank rel=noopener>${p}</a>`:p;
+   return s.new&&s.new.includes(p)?t+'<span class="badge">new</span>':t}).join(', ');
+  tr.innerHTML=`<td title="${esc('pid '+s.pid+(s.cmd?'\\n'+s.cmd:''))}">${esc(s.name)}</td><td class=mem>${s.rss?s.rss.toFixed(0)+' MB':'-'}</td>
+   <td>${ports}</td><td>${sys?'':'<button data-p="'+s.ports[0]+'" data-n="'+esc(s.name+' (pid '+s.pid+')')+'">kill</button>'}</td>`;
   tb.appendChild(tr);});
  document.querySelector('#msg').textContent=d.services.length+' services, '
   +(d.total/1024).toFixed(1)+' GB RAM — updated '+new Date().toLocaleTimeString();
@@ -386,31 +423,31 @@ function fmtLeft(s){if(s==null)return'';const h=Math.floor(s/3600),m=Math.floor(
  return h?h+'h '+m+'m':m+'m'}
 function fmtTok(n){n=n||0;return n>999999?(n/1e6).toFixed(1)+'M':n>999?(n/1e3).toFixed(0)+'K':''+n}
 const CARD_RENDER={needle:(box,d)=>{
- if(d.error){box.innerHTML=`<span style="color:var(--kill)">${d.error}</span>`;return}
+ if(d.error){box.innerHTML=`<span style="color:var(--kill)">${esc(d.error)}</span>`;return}
  if(!Array.isArray(d.providers)){box.innerHTML='<span style="color:var(--dim)">no data</span>';return}
  box.innerHTML=d.providers.filter(p=>!p.hidden).map(p=>{
-  if(!p.ok)return`<div style="margin:.3rem 0"><b>${p.name}</b> <span style="color:var(--dim)">— ${p.error||'unavailable'}</span></div>`;
+  if(!p.ok)return`<div style="margin:.3rem 0"><b>${esc(p.name)}</b> <span style="color:var(--dim)">— ${esc(p.error||'unavailable')}</span></div>`;
   if(p.tally){const t=p.tally;
-   const models=(t.top_models||[]).map(m=>`<div style="padding-left:1rem;color:var(--dim)">${m.model}: ${m.tokens>999999?(m.tokens/1e6).toFixed(1)+'M':m.tokens>999?(m.tokens/1e3).toFixed(0)+'K':m.tokens} tok</div>`).join('');
-   return`<div style="margin:.3rem 0"><b>${p.name}</b>`+
+   const models=(t.top_models||[]).map(m=>`<div style="padding-left:1rem;color:var(--dim)">${esc(m.model)}: ${m.tokens>999999?(m.tokens/1e6).toFixed(1)+'M':m.tokens>999?(m.tokens/1e3).toFixed(0)+'K':m.tokens} tok</div>`).join('');
+   return`<div style="margin:.3rem 0"><b>${esc(p.name)}</b>`+
     `<div style="padding-left:1rem;color:var(--dim)">Today ${fmtTok(t.today)} · Week ${fmtTok(t.week)} · All ${fmtTok(t.all_time)}</div>`+models+`</div>`}
-  return`<div style="margin:.3rem 0"><b>${p.name}</b>${p.plan?` <span style="color:var(--dim)">(${p.plan})</span>`:''}`
+  return`<div style="margin:.3rem 0"><b>${esc(p.name)}</b>${p.plan?` <span style="color:var(--dim)">(${esc(p.plan)})</span>`:''}`
    +(p.windows||[]).map(w=>{
      const now=Date.now()/1000;
      const left=w.resets_at!=null?Math.max(w.resets_at-now,0):null;
      const pct=w.used!=null?Math.max(100-Math.min(w.used,100),0):null;
-     return`<div style="padding-left:1rem;color:var(--dim)">${w.label}: `
-      +(pct!=null?`<b style="color:var(--fg)">${pct.toFixed(0)}% left</b>${meter(pct)}`:(w.detail||''))
+     return`<div style="padding-left:1rem;color:var(--dim)">${esc(w.label)}: `
+      +(pct!=null?`<b style="color:var(--fg)">${pct.toFixed(0)}% left</b>${meter(pct)}`:esc(w.detail||''))
       +(left!=null&&left>0?` · resets in ${fmtLeft(left)}`:'')+`</div>`}).join('')
    +`</div>`}).join('')
   +`<div style="color:var(--dim);font-size:.75rem;margin-top:.3rem">${d._live?'live':'cached'} `
   +(d.updated?new Date(d.updated*1000).toLocaleTimeString():'')+'</div>';},
 docker:(box,d)=>{
- if(d.error){box.innerHTML=`<span style="color:var(--kill)">${d.error}</span>`;return}
+ if(d.error){box.innerHTML=`<span style="color:var(--kill)">${esc(d.error)}</span>`;return}
  if(!d.containers||!d.containers.length){box.innerHTML='<span style="color:var(--dim)">no containers running</span>';return}
- box.innerHTML=d.containers.map(c=>`<div style="margin:.3rem 0"><b>${c.Name}</b>`
-  +` <span style="color:var(--dim)">${c.CPUPerc} CPU · ${c.MemUsage}`
-  +`${c.State&&c.State!=='running'?' · <span style="color:var(--kill)">'+c.State+'</span>':''}</span></div>`).join('');}};
+ box.innerHTML=d.containers.map(c=>`<div style="margin:.3rem 0"><b>${esc(c.Name)}</b>`
+  +` <span style="color:var(--dim)">${esc(c.CPUPerc)} CPU · ${esc(c.MemUsage)}`
+  +`${c.State&&c.State!=='running'?' · <span style="color:var(--kill)">'+esc(c.State)+'</span>':''}</span></div>`).join('');}};
 async function loadAddon(name,live){
  const btn=document.querySelector('#addon-'+name+' button');
  if(btn){btn.disabled=true;btn.textContent=live?'…':'refresh';}
@@ -429,7 +466,7 @@ for(const name of ADDONS){
  loadAddon(name,false);}
 document.addEventListener('click',async e=>{
  const b=e.target.closest('button[data-p]');if(!b)return;
- if(!confirm('kill everything on port '+b.dataset.p+'?'))return;
+ if(!confirm('kill '+b.dataset.n+' on port '+b.dataset.p+'?'))return;
  const r=await fetch('/api/kill',{method:'POST',body:b.dataset.p});
  document.querySelector('#msg').textContent=await r.text();
  setTimeout(refresh,1500);});
@@ -457,7 +494,7 @@ maxlength=4 autofocus autocomplete=off><button>enter</button></form>
 <script>
 async function go(e){e.preventDefault();
  const r=await fetch('/api/login',{method:'POST',body:document.getElementById('pin').value});
- if(r.ok){location.reload()}else{document.getElementById('err').textContent='wrong pin'}}
+ if(r.ok){location.reload()}else{document.getElementById('err').textContent=await r.text()}}
 </script></body></html>"""
 
 LOGIN_PAGE = LOGIN_TMPL.replace("__HOST__", HOST)
@@ -516,15 +553,16 @@ class Handler(BaseHTTPRequestHandler):
         if self.path == "/api/login":
             n = int(self.headers.get("Content-Length", 0))
             pin = self.rfile.read(n).decode().strip()
-            want = pin_hash()
-            if want and secrets.compare_digest(
-                    hashlib.sha256(pin.encode()).hexdigest(), want):
+            res = try_login(pin)
+            if res == "ok":
                 tok = secrets.token_hex(32)
                 SESSIONS.add(tok)
                 self.send_response(200)
                 self.send_header("Set-Cookie",
-                                 f"ports_auth={tok}; Path=/; Max-Age=2592000; HttpOnly")
+                                 f"ports_auth={tok}; Path=/; Max-Age=2592000; HttpOnly; SameSite=Lax")
                 self.end_headers()
+            elif res == "locked":
+                self._send(429, "too many tries, wait a few minutes", "text/plain")
             else:
                 time.sleep(1)  # slow down brute force
                 self._send(403, "wrong pin", "text/plain")
