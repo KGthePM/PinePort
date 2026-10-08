@@ -29,6 +29,7 @@ The installer copies `pineports`, `pineports-docker` and the `ports` alias to `~
 ./install.sh               # re-run any time to update; keeps your PIN and labels
 ./install.sh --reset-pin   # choose a new PIN
 ./install.sh --uninstall   # remove it (asks before deleting config or turning off linger)
+pineports-uninstall        # same, from anywhere (no repo clone needed)
 ```
 
 Optional: `pip install --user setproctitle` (nicer process name).

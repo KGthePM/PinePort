@@ -51,6 +51,6 @@ Existing add-ons: `needle` (external repo KGthePM/Needle, AI usage) and `pinepor
 ## Other files
 
 - `ports-wrapper`: installed as `~/.local/bin/ports`, a muscle-memory alias that execs the installed `pineports`.
-- `install.sh`: installer/updater/uninstaller (copies files, sets PIN via hidden prompt, enables the service + `loginctl enable-linger`).
+- `install.sh`: installer/updater/uninstaller (copies files, sets PIN via hidden prompt, enables the service + `loginctl enable-linger`) and copies itself to `~/.local/bin/pineports-uninstall`, which only uninstalls.
 - `systemd/pineports.service`: user unit that runs `%h/.local/bin/pineports --web` (no hardcoded home dir).
 - `config/`: example labels file and instructions for generating the PIN hash.

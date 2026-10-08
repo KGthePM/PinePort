@@ -5,6 +5,7 @@
 #   ./install.sh              install or update
 #   ./install.sh --reset-pin  install/update and choose a new PIN
 #   ./install.sh --uninstall  remove everything this script installed
+#   pineports-uninstall       same, from anywhere (installed copy of this script)
 set -euo pipefail
 
 BIN="$HOME/.local/bin"
@@ -48,8 +49,8 @@ uninstall() {
     rm -f "$UNIT_DIR/pineports.service"
     systemctl --user daemon-reload
 
-    rm -f "$BIN/pineports" "$BIN/pineports-docker"
-    say "Removed pineports and pineports-docker from $BIN"
+    rm -f "$BIN/pineports" "$BIN/pineports-docker" "$BIN/pineports-uninstall"
+    say "Removed pineports, pineports-docker and pineports-uninstall from $BIN"
     if is_our_wrapper "$BIN/ports"; then rm -f "$BIN/ports"
     else warn "Left $BIN/ports alone (not PinePort's wrapper)"; fi
 
@@ -80,6 +81,7 @@ do_install() {
 
     say "Installing to $BIN"
     install -m 755 "$SRC/pineports" "$SRC/pineports-docker" "$BIN/"
+    install -m 755 "$SRC/install.sh" "$BIN/pineports-uninstall"
     if is_our_wrapper "$BIN/ports"; then install -m 755 "$SRC/ports-wrapper" "$BIN/ports"
     else warn "$BIN/ports already exists and isn't PinePort's — skipped the 'ports' alias"; fi
 
@@ -127,6 +129,15 @@ do_install() {
     if [[ -n $ip ]]; then say "      or:        http://$ip:6310"; fi
     say "CLI: pineports   |   kill: pineports kill <port>"
 }
+
+# the copy in ~/.local/bin only uninstalls; installing needs the repo files
+if [[ $(basename "$0") == pineports-uninstall ]]; then
+    case "${1:-}" in
+        ""|--uninstall) uninstall; exit ;;
+        -h|--help)      echo "pineports-uninstall: remove PinePort"; exit ;;
+        *)              die "pineports-uninstall only uninstalls; run ./install.sh from a PinePort checkout to install" ;;
+    esac
+fi
 
 case "${1:-}" in
     "")          do_install 0 ;;
