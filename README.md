@@ -20,21 +20,18 @@ Listener overview for the Linux box it runs on — what's running, on which port
 ## Install
 
 ```bash
-cp pineports ~/.local/bin/pineports
-cp ports-wrapper ~/.local/bin/ports          # muscle-memory alias
-mkdir -p ~/.config/systemd/user
-cp systemd/pineports.service ~/.config/systemd/user/
-systemctl --user daemon-reload
-systemctl --user enable --now pineports
-cp config/pineports-labels.conf ~/.config/
-
-# PIN auth (sha256 hash, no trailing newline, chmod 600)
-printf '%s' 'YOURPIN' | sha256sum | cut -d' ' -f1 > ~/.config/pineports-pin
-chmod 600 ~/.config/pineports-pin
-
-# deps
-pip install --user setproctitle
+git clone https://github.com/KGthePM/PinePort.git && cd PinePort && ./install.sh
 ```
+
+The installer copies `pineports`, `pineports-docker` and the `ports` alias to `~/.local/bin`, asks for a dashboard PIN (stored as a sha256 hash, `chmod 600`), and enables the `pineports` systemd user service with linger, so the dashboard starts at boot and keeps running while you're logged out.
+
+```bash
+./install.sh               # re-run any time to update; keeps your PIN and labels
+./install.sh --reset-pin   # choose a new PIN
+./install.sh --uninstall   # remove it (asks before deleting config or turning off linger)
+```
+
+Optional: `pip install --user setproctitle` (nicer process name).
 
 Optional sudoers rule for killing root-owned pids (deliberately narrow):
 

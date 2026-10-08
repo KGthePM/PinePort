@@ -17,8 +17,9 @@ PinePort (`pineports`, formerly `ports`) is a single-file Python 3 tool for one 
 python3 test_easywins.py
 python3 test_addon_path.py
 
-# Deploy: the systemd user service runs the installed copy, not the repo
-cp pineports ~/.local/bin/pineports && systemctl --user restart pineports
+# Install / deploy: the systemd user service runs the installed copy, not the repo.
+# install.sh is idempotent: copies to ~/.local/bin, restarts the service, keeps PIN.
+./install.sh                # also: --reset-pin, --uninstall
 ```
 
 Test caveats:
@@ -50,5 +51,6 @@ Existing add-ons: `needle` (external repo KGthePM/Needle, AI usage) and `pinepor
 ## Other files
 
 - `ports-wrapper`: installed as `~/.local/bin/ports`, a muscle-memory alias that execs the installed `pineports`.
-- `systemd/pineports.service`: user unit that runs `~/.local/bin/pineports --web`.
+- `install.sh`: installer/updater/uninstaller (copies files, sets PIN via hidden prompt, enables the service + `loginctl enable-linger`).
+- `systemd/pineports.service`: user unit that runs `%h/.local/bin/pineports --web` (no hardcoded home dir).
 - `config/`: example labels file and instructions for generating the PIN hash.
