@@ -1,6 +1,6 @@
 # PinePort
 
-Listener overview for the Linux box it runs on — what's running, on which ports, how much RAM it's eating — plus one-keystroke kills. Née `ports`, renamed `pineports`.
+Listener overview for the box it runs on — what's running, on which ports, how much RAM it's eating — plus one-keystroke kills. Runs on **Linux and Windows**. Née `ports`, renamed `pineports`.
 
 ![PinePort web UI](docs/screenshot.png)
 
@@ -39,6 +39,41 @@ Optional sudoers rule for killing root-owned pids (deliberately narrow):
 ```
 kg ALL=(root) NOPASSWD: /usr/bin/ss -tulpn, /usr/bin/kill
 ```
+
+## Windows
+
+Same tool, same web UI, same CLI. Requires **Python 3.8+**; data comes from
+built-in PowerShell (`Get-NetTCPConnection`) plus [psutil](https://pypi.org/project/psutil/)
+for process names/RAM and the stats bar:
+
+```powershell
+git clone https://github.com/KGthePM/PinePort.git; cd PinePort
+pip install psutil
+python pineports          # CLI table
+python pineports kill <port>
+python pineports --web    # dashboard on http://localhost:6310
+```
+
+- **Run at startup (optional):** press `Win+R`, type `shell:startup`, and put a
+  shortcut to `pythonw.exe <path>\pineports --web` in that folder.
+- **Full-kill parity:** your own processes die with one click. Killing another
+  user's process needs an elevated console (`Run as administrator`) — the UI
+  tells you when that's the case.
+- **Docker Desktop:** published ports stop the container, same as Linux.
+- **Config:** `%APPDATA%\pineports\` — same filenames as Linux
+  (`pineports-pin`, `pineports-labels.conf`, `pineports-seen.json`).
+- **No psutil?** The table still lists ports + pids; install psutil for
+  names, RAM, and the stats bar.
+
+### Windows smoke-test checklist (first run on a new machine)
+
+1. `python test_windows.py` — all 5 tests pass
+2. `python pineports` — table lists listeners with names + RAM
+3. `python pineports --web` → log in with your PIN → services + stats bar render
+4. Kill a test server you started yourself (the smoke test does this too)
+5. Kill a Docker-published port → container stops
+6. (Optional, if in a startup shortcut) reboot → dashboard is up without login
+
 
 ## Notes
 

@@ -14,17 +14,31 @@ try:
 except ImportError:
     pass
 
-LABELS = os.path.expanduser("~/.config/pineports-labels.conf")
-PIN_FILE = os.path.expanduser("~/.config/pineports-pin")
+# ---------- platform / config ----------
+# Windows keeps the same filenames under %APPDATA%\pineports\; Linux keeps
+# ~/.config/ as before. One base dir, computed once.
+IS_WIN = sys.platform == "win32"
+
+def CONFIG_PATH(fname):
+    base = (os.path.join(os.environ.get("APPDATA", os.path.expanduser("~")),
+                         "pineports") if IS_WIN
+            else os.path.join(os.path.expanduser("~"), ".config"))
+    if IS_WIN:
+        os.makedirs(base, exist_ok=True)
+    return os.path.join(base, fname)
+
+LABELS = CONFIG_PATH("pineports-labels.conf")
+PIN_FILE = CONFIG_PATH("pineports-pin")
 WEB_PORT = 6310
 HOST = socket.gethostname()  # self-identify: page + login name the machine it runs on
 
 # new-listener badge: first-seen times per port; badged for 24h unless the
 # port is labeled (declared expected) or ephemeral (VS Code/Firefox pick
 # random high ports constantly).
-SEEN_FILE = os.path.expanduser("~/.config/pineports-seen.json")
+SEEN_FILE = CONFIG_PATH("pineports-seen.json")
 NEW_WINDOW = 24 * 3600
 EPHEMERAL_MIN = 32768
+DOCKER = "docker" if IS_WIN else "/usr/bin/docker"
 
 # ---------- add-ons ----------
 # An add-on is a CLI found on PATH that prints JSON. Found at startup -> its
@@ -54,6 +68,175 @@ def _find_addons():
     return a
 
 ADDONS = _find_addons()
+
+# ---------- Windows data collection (IS_WIN) ----------
+# Listener list: PowerShell Get-NetTCPConnection -State Listen (built into
+# Win10+). Per-pid name/RSS/cmdline + system stats: psutil (pip install
+# psutil). Without psutil the table still shows ports + pids, just no
+# names/RAM, and the stats bar reads zeros.
+
+_psutil = None  # psutil handle; set below on Windows (tests patch this here)
+if IS_WIN:
+    try:
+        import psutil as _psutil
+    except ImportError:
+        pass
+
+def _ps_json(cmdlet):
+    """Run a PowerShell cmdlet, return parsed JSON (list-normalized) or None."""
+    try:
+        r = subprocess.run(["powershell", "-NoProfile", "-Command",
+                            f"{cmdlet} | ConvertTo-Json -Compress"],
+                           capture_output=True, text=True, timeout=20)
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    if r.returncode != 0 or not r.stdout.strip():
+        return None
+    try:
+        d = json.loads(r.stdout)
+    except ValueError:
+        return None
+    return d if isinstance(d, list) else [d]
+
+def win_listeners():
+    """[(pid, port, external)] for TCP LISTEN sockets; external = bound off
+    loopback (rendered as clickable links, same rule as Linux)."""
+    rows = _ps_json("Get-NetTCPConnection -State Listen")
+    out = []
+    for c in rows or []:
+        try:
+            pid = int(c.get("OwningProcess") or 0)
+            port = int(c.get("LocalPort") or 0)
+        except (TypeError, ValueError):
+            continue
+        if pid and port:
+            out.append((pid, port, not _is_loopback(str(c.get("LocalAddress") or ""))))
+    return out
+
+def win_proc(pid):
+    """(name, rss_mb, cmdline) for a pid; ('', None, '') if unknown."""
+    if not _psutil:
+        return "", None, ""
+    try:
+        p = _psutil.Process(pid)
+        with p.oneshot():
+            return (p.name(), p.memory_info().rss / 1048576,
+                    " ".join(p.cmdline())[:300])
+    except Exception:
+        try:
+            return _psutil.Process(pid).name(), None, ""
+        except Exception:
+            return "", None, ""
+
+_last_win_cpu = None  # (t, idle, total) for cpu delta between polls
+
+def win_cpu_pct():
+    global _last_win_cpu
+    if not _psutil:
+        return 0.0
+    t = _psutil.cpu_times()
+    idle = t.idle + getattr(t, "iowait", 0.0)
+    total = sum(t)
+    pct = 0.0
+    if _last_win_cpu:
+        didle, dtotal = idle - _last_win_cpu[1], total - _last_win_cpu[2]
+        if dtotal > 0:
+            pct = 100.0 * (1.0 - didle / dtotal)
+    _last_win_cpu = (time.time(), idle, total)
+    return round(pct, 1)
+
+def win_sys_stats():
+    if not _psutil:
+        return {"ram_pct": 0.0, "ram_used": 0.0, "ram_total": 0.0,
+                "cpu_pct": 0.0, "disk_pct": 0.0, "disk_free": 0.0,
+                "uptime": "-", "load1": 0.0}
+    vm = _psutil.virtual_memory()
+    drive = os.path.splitdrive(os.path.expanduser("~"))[0] + os.sep or "C:" + os.sep
+    du = _psutil.disk_usage(drive)
+    up = int(time.time() - _psutil.boot_time())
+    d, rem = divmod(up, 86400)
+    h, m = divmod(rem, 3600)
+    m //= 60
+    return {
+        "ram_pct": round(vm.percent, 1),
+        "ram_used": round(vm.used / 1048576, 1),
+        "ram_total": round(vm.total / 1048576, 1),
+        "cpu_pct": win_cpu_pct(),
+        "disk_pct": round(du.percent, 1),
+        "disk_free": round(du.free / 2**30, 0),
+        "uptime": f"{d}d {h}h {m}m" if d else f"{h}h {m}m",
+        "load1": 0.0,  # no loadavg on Windows
+    }
+
+def win_gather():
+    """Same row schema as gather(): one row per pid, docker ports detected
+    via the publishing process, labels override process names."""
+    labels = load_labels()
+    services = {}
+    for pid, port, external in win_listeners():
+        s = services.setdefault(pid, {"ports": set(), "links": set()})
+        s["ports"].add(port)
+        if external:
+            s["links"].add(port)
+    out = []
+    for pid, s in services.items():
+        name, rss, cmd = win_proc(pid)
+        for p in s["ports"]:
+            if p in labels:
+                name = labels[p]
+                break
+        if not name:
+            name = f"pid {pid}"
+        lname = name.lower()
+        kind = "docker" if ("docker" in lname or "containerd" in lname
+                            or "vpnkit" in lname) else "user"
+        ports = sorted(s["ports"])
+        out.append({"name": name, "pid": pid, "rss": rss, "cmd": cmd,
+                    "ports": ports, "links": sorted(s["links"]), "kind": kind,
+                    "new": badge_ports(ports, labels)})
+    return sorted(out, key=lambda e: -(e["rss"] or 0))
+
+def win_kill_pid(pid, port):
+    """terminate() then kill(); honest error for other users' processes."""
+    if not _psutil:
+        return "psutil not installed — run: pip install psutil"
+    try:
+        p = _psutil.Process(pid)
+        pname = p.name()
+    except _psutil.NoSuchProcess:
+        return f"pid {pid} already gone"
+    except Exception as ex:
+        return f"cannot inspect pid {pid}: {ex}"
+    try:
+        p.terminate()
+        try:
+            p.wait(timeout=5)
+        except Exception:
+            p.kill()
+            p.wait(timeout=5)
+        return f"stopped {pname} (pid {pid}) on :{port}"
+    except _psutil.AccessDenied:
+        return (f"no permission to kill {pname} (pid {pid}) — it belongs to "
+                "another user; run from an elevated (Run as administrator) console")
+    except Exception as ex:
+        return f"failed to kill pid {pid}: {ex}"
+
+def win_kill_port(port):
+    port = int(port)
+    cid = docker_container_for_port(port)
+    if cid:
+        name = subprocess.run([DOCKER, "inspect", "--format", "{{.Name}}", cid],
+                              capture_output=True, text=True).stdout.strip()
+        r = subprocess.run([DOCKER, "stop", "--timeout", "5", cid],
+                           capture_output=True, text=True)
+        return (f"stopped docker container {name} (was publishing :{port})"
+                if r.returncode == 0 else f"docker stop failed: {r.stderr.strip()}")
+    for pid, p, _ext in win_listeners():
+        if p == port:
+            return win_kill_pid(pid, port)
+    return f"nothing listening on :{port}"
+
+# ---------- data gathering ----------
 
 def pin_hash():
     try:
@@ -177,7 +360,7 @@ def badge_ports(ports, labels):
                 pass  # badge state is best-effort
         return badged
 
-def gather():
+def linux_gather():
     """-> list of dicts, one per pid: name, pid, rss, cmd, ports(list),
     links (tcp ports reachable off-box), kind ('user'|'docker'), new"""
     labels = load_labels()
@@ -220,6 +403,9 @@ def gather():
     # each with its own RAM and a kill button that hits that pid
     return sorted(out, key=lambda e: -(e["rss"] or 0))
 
+# platform dispatch — same name, per-OS implementation
+gather = win_gather if IS_WIN else linux_gather
+
 # ---------- system stats ----------
 
 _last_stat = None  # (t, idle_ticks, total_ticks) for cpu delta between polls
@@ -240,7 +426,7 @@ def cpu_pct():
     _last_stat = (now, idle, total)
     return round(pct, 1)
 
-def sys_stats():
+def linux_sys_stats():
     mi = {}
     with open("/proc/meminfo") as f:
         for line in f:
@@ -263,23 +449,25 @@ def sys_stats():
         "load1": round(os.getloadavg()[0], 2),
     }
 
+sys_stats = win_sys_stats if IS_WIN else linux_sys_stats
+
 # ---------- kill ----------
 
 def docker_container_for_port(port):
     """container id publishing <port>, or None"""
-    r = subprocess.run(["/usr/bin/docker", "ps", "-q"],
+    r = subprocess.run([DOCKER, "ps", "-q"],
                        capture_output=True, text=True)
     if r.returncode != 0:
         return None
     for cid in r.stdout.split():
-        ins = subprocess.run(["/usr/bin/docker", "inspect", "--format",
+        ins = subprocess.run([DOCKER, "inspect", "--format",
                               "{{json .NetworkSettings.Ports}}", cid],
                              capture_output=True, text=True).stdout
         if f'"HostPort":"{port}"' in ins.replace(" ", ""):
             return cid
     return None
 
-def kill_port(port):
+def linux_kill_port(port):
     port = int(port)
     # docker-published port?
     cid = docker_container_for_port(port)
@@ -318,6 +506,8 @@ def kill_port(port):
                         return f"sent SIGTERM to {name} (pid {pid}) on :{port} (root)"
                     return f"no permission to kill pid {pid} (system service?)"
     return f"nothing listening on :{port}"
+
+kill_port = win_kill_port if IS_WIN else linux_kill_port
 
 # ---------- CLI table ----------
 
