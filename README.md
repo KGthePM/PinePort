@@ -49,13 +49,20 @@ for process names/RAM and the stats bar:
 ```powershell
 git clone https://github.com/KGthePM/PinePort.git; cd PinePort
 pip install psutil
-python pineports          # CLI table
-python pineports kill <port>
-python pineports --web    # dashboard on http://localhost:6310
+.\start-pineports.cmd      # prompt for a PIN if needed, start, open dashboard
+.\restart-pineports.cmd    # reload PinePort and newly installed add-ons
+.\stop-pineports.cmd
+.\test-pineports.cmd       # cross-platform + real-Windows test suites
 ```
 
+- The CMD launchers are double-clickable. Their shared PowerShell implementation
+  is `windows\pineports.ps1`. Runtime PID and logs are stored under
+  `%APPDATA%\pineports\`.
+- Manual commands remain available: `python pineports`,
+  `python pineports --set-pin`, `python pineports kill <port>`, and
+  `python pineports --web`.
 - **Run at startup (optional):** press `Win+R`, type `shell:startup`, and put a
-  shortcut to `pythonw.exe <path>\pineports --web` in that folder.
+  shortcut to `pythonw.exe "<path>\pineports" --web` in that folder.
 - **Full-kill parity:** your own processes die with one click. Killing another
   user's process needs an elevated console (`Run as administrator`) — the UI
   tells you when that's the case.
@@ -64,10 +71,14 @@ python pineports --web    # dashboard on http://localhost:6310
   (`pineports-pin`, `pineports-labels.conf`, `pineports-seen.json`).
 - **No psutil?** The table still lists ports + pids; install psutil for
   names, RAM, and the stats bar.
+- **AI usage:** install [Needle](https://github.com/KGthePM/Needle). PinePort
+  discovers `needle` on PATH and the standard
+  `%LOCALAPPDATA%\Needle\bin\needle.py` installation. Restart PinePort after
+  installing Needle so the AI usage card is registered.
 
 ### Windows smoke-test checklist (first run on a new machine)
 
-1. `python test_windows.py` — all 5 tests pass
+1. `test-pineports.cmd` — all tests pass
 2. `python pineports` — table lists listeners with names + RAM
 3. `python pineports --web` → log in with your PIN → services + stats bar render
 4. Kill a test server you started yourself (the smoke test does this too)

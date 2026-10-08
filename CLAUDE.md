@@ -40,7 +40,7 @@ Everything — data collection, HTTP server, and the HTML/CSS/JS page — lives 
 
 ### Add-on system
 
-An add-on is an external CLI that prints JSON. `_find_addons()` runs once at import and resolves each one with `_addon_cmd()`, which tries `shutil.which` first and then falls back to `~/.local/bin`. The fallback is needed because the boot-time systemd user manager has a minimal PATH. Found add-ons go into the `ADDONS` dict as `{cmd, cached args, live args, (cached, live) timeouts}`. The server runs `cmd` + `cached` by default and `cmd` + `live` when `?live=1` is set.
+An add-on is an external CLI that prints JSON. `_find_addons()` runs once at import and resolves each one with `_addon_cmd()`, which tries `shutil.which` first and then falls back to `~/.local/bin`. The fallback is needed because the boot-time systemd user manager has a minimal PATH. On Windows it also resolves Python add-ons on PATH and Needle's standard `%LOCALAPPDATA%\Needle\bin\needle.py` install as `[sys.executable, script]`. Found add-ons go into the `ADDONS` dict as `{cmd, cached args, live args, (cached, live) timeouts}`. The server runs `cmd` + `cached` by default and `cmd` + `live` when `?live=1` is set.
 
 To add one:
 1. Register it in `_find_addons()`.
@@ -53,4 +53,5 @@ Existing add-ons: `needle` (external repo KGthePM/Needle, AI usage) and `pinepor
 - `ports-wrapper`: installed as `~/.local/bin/ports`, a muscle-memory alias that execs the installed `pineports`.
 - `install.sh`: installer/updater/uninstaller (copies files, sets PIN via hidden prompt, enables the service + `loginctl enable-linger`) and copies itself to `~/.local/bin/pineports-uninstall`, which only uninstalls.
 - `systemd/pineports.service`: user unit that runs `%h/.local/bin/pineports --web` (no hardcoded home dir).
+- `start-pineports.cmd`, `stop-pineports.cmd`, `restart-pineports.cmd`, `test-pineports.cmd`: double-clickable Windows wrappers around `windows/pineports.ps1`; runtime PID/logs live under `%APPDATA%\pineports`.
 - `config/`: example labels file and instructions for generating the PIN hash.

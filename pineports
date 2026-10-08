@@ -5,6 +5,7 @@ Usage:
   ports                 show table
   ports kill <port>     stop whatever listens on <port>
   ports -w / --web      serve web UI on :6310 (for LAN/Tailscale)
+  ports --set-pin       create or replace the web UI PIN
 """
 import subprocess, os, sys, signal, json, hashlib, secrets, time, shutil, threading, socket, base64
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
@@ -47,11 +48,20 @@ DOCKER = "docker" if IS_WIN else "/usr/bin/docker"
 
 def _addon_cmd(name):
     """Resolve an add-on CLI. PATH first (normal case), then the known user
-    install dir — a boot-time systemd user manager has no ~/.local/bin on
-    PATH until a desktop session imports its environment."""
+    install locations that may be absent from service-manager PATHs."""
     hit = shutil.which(name)
     if hit:
         return hit
+    if IS_WIN:
+        py_hit = shutil.which(name + ".py")
+        if py_hit:
+            return [sys.executable, py_hit]
+        if name == "needle":
+            local = os.environ.get("LOCALAPPDATA")
+            if local:
+                needle = os.path.join(local, "Needle", "bin", "needle.py")
+                if os.path.isfile(needle):
+                    return [sys.executable, needle]
     fallback = os.path.join(os.path.expanduser("~/.local/bin"), name)
     return fallback if os.access(fallback, os.X_OK) else None
 
@@ -62,9 +72,14 @@ def _find_addons():
         a["needle"] = {"cmd": needle, "cached": ["--cached"], "live": [],
                        "timeout": (10, 120)}  # (cached, live) seconds
     pdock = _addon_cmd("pineports-docker")
+    if not pdock and IS_WIN:
+        bundled = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                               "pineports-docker")
+        if os.path.isfile(bundled):
+            pdock = [sys.executable, bundled]
     if pdock:
         a["docker"] = {"cmd": pdock, "cached": [], "live": [],
-                       "timeout": (10, 10)}  # local socket, always fast
+                        "timeout": (10, 10)}  # local socket, always fast
     return a
 
 ADDONS = _find_addons()
@@ -221,16 +236,39 @@ def win_kill_pid(pid, port):
     except Exception as ex:
         return f"failed to kill pid {pid}: {ex}"
 
-def win_kill_port(port):
+def win_kill_port(port, expected_pid=None):
     port = int(port)
-    cid = docker_container_for_port(port)
+    listeners = None
+    if expected_pid is not None:
+        expected_pid = int(expected_pid)
+        listeners = win_listeners()
+        if not any(pid == expected_pid and p == port
+                   for pid, p, _ext in listeners):
+            return f"listener on :{port} changed; refresh and try again"
+    try:
+        cid = docker_container_for_port(port)
+    except DockerTimeout:
+        return "docker lookup timed out; nothing was stopped"
     if cid:
-        name = subprocess.run([DOCKER, "inspect", "--format", "{{.Name}}", cid],
-                              capture_output=True, text=True).stdout.strip()
-        r = subprocess.run([DOCKER, "stop", "--timeout", "5", cid],
-                           capture_output=True, text=True)
+        if expected_pid is not None and not any(
+                pid == expected_pid and p == port
+                for pid, p, _ext in win_listeners()):
+            return f"listener on :{port} changed; refresh and try again"
+        try:
+            name = subprocess.run(
+                [DOCKER, "inspect", "--format", "{{.Name}}", cid],
+                capture_output=True, text=True, timeout=5).stdout.strip()
+            r = subprocess.run([DOCKER, "stop", "--timeout", "5", cid],
+                               capture_output=True, text=True, timeout=10)
+        except subprocess.TimeoutExpired:
+            return "docker stop timed out; the container may still be running"
         return (f"stopped docker container {name} (was publishing :{port})"
                 if r.returncode == 0 else f"docker stop failed: {r.stderr.strip()}")
+    if expected_pid is not None:
+        if any(pid == expected_pid and p == port
+               for pid, p, _ext in win_listeners()):
+            return win_kill_pid(expected_pid, port)
+        return f"listener on :{port} changed; refresh and try again"
     for pid, p, _ext in win_listeners():
         if p == port:
             return win_kill_pid(pid, port)
@@ -240,11 +278,34 @@ def win_kill_port(port):
 
 def pin_hash():
     try:
-        return open(PIN_FILE).read().strip()
+        with open(PIN_FILE) as f:
+            return f.read().strip()
     except FileNotFoundError:
         return None
 
-SESSIONS = set()  # valid auth tokens (in-memory; re-login after restart)
+def set_pin():
+    from getpass import getpass
+    pin = getpass("Dashboard PIN (4 digits): ")
+    confirm = getpass("Confirm PIN: ")
+    if len(pin) != 4 or not pin.isdigit():
+        raise SystemExit("PIN must be exactly 4 digits")
+    if pin != confirm:
+        raise SystemExit("PINs do not match")
+    os.makedirs(os.path.dirname(PIN_FILE), exist_ok=True)
+    tmp = f"{PIN_FILE}.{os.getpid()}.tmp"
+    try:
+        fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        with os.fdopen(fd, "w") as f:
+            f.write(hashlib.sha256(pin.encode()).hexdigest() + "\n")
+        os.replace(tmp, PIN_FILE)
+    finally:
+        try:
+            os.unlink(tmp)
+        except FileNotFoundError:
+            pass
+    print(f"PIN saved to {PIN_FILE}")
+
+SESSIONS = {}  # auth token -> PIN hash; changing the PIN revokes old sessions
 
 # Login throttle is global, not per-request: the threaded server would let
 # parallel guesses each sleep on their own thread, so a 4-digit PIN falls in
@@ -277,7 +338,12 @@ def check_auth(handler):
     c = handler.headers.get("Cookie", "")
     for part in c.split(";"):
         if part.strip().startswith("ports_auth="):
-            return part.strip().split("=", 1)[1] in SESSIONS
+            token = part.strip().split("=", 1)[1]
+            session_pin = SESSIONS.get(token, "")
+            current_pin = pin_hash() or ""
+            if session_pin and secrets.compare_digest(session_pin, current_pin):
+                return True
+            SESSIONS.pop(token, None)
     return False
 
 # ---------- data gathering ----------
@@ -327,8 +393,9 @@ _seen_lock = threading.Lock()
 
 def load_seen():
     try:
-        return json.load(open(SEEN_FILE))
-    except (FileNotFoundError, ValueError):
+        with open(SEEN_FILE) as f:
+            return json.load(f)
+    except (OSError, ValueError):
         return {}
 
 def save_seen(seen):
@@ -453,30 +520,64 @@ sys_stats = win_sys_stats if IS_WIN else linux_sys_stats
 
 # ---------- kill ----------
 
+class DockerTimeout(Exception):
+    pass
+
 def docker_container_for_port(port):
     """container id publishing <port>, or None"""
-    r = subprocess.run([DOCKER, "ps", "-q"],
-                       capture_output=True, text=True)
+    try:
+        r = subprocess.run([DOCKER, "ps", "-q"],
+                           capture_output=True, text=True, timeout=5)
+    except OSError:
+        return None
+    except subprocess.TimeoutExpired as ex:
+        raise DockerTimeout from ex
     if r.returncode != 0:
         return None
     for cid in r.stdout.split():
-        ins = subprocess.run([DOCKER, "inspect", "--format",
-                              "{{json .NetworkSettings.Ports}}", cid],
-                             capture_output=True, text=True).stdout
+        try:
+            ins = subprocess.run([DOCKER, "inspect", "--format",
+                                  "{{json .NetworkSettings.Ports}}", cid],
+                                 capture_output=True, text=True,
+                                 timeout=5).stdout
+        except subprocess.TimeoutExpired as ex:
+            raise DockerTimeout from ex
         if f'"HostPort":"{port}"' in ins.replace(" ", ""):
             return cid
     return None
 
-def linux_kill_port(port):
+def linux_port_owned_by_pid(port, pid):
+    for line in ss_out().splitlines():
+        parts = line.split()
+        if len(parts) <= 4 or "users:" not in line:
+            continue
+        addr = parts[4]
+        p = (addr.rsplit("]", 1)[-1].lstrip(":") if addr.startswith("[")
+             else addr.rsplit(":", 1)[-1])
+        if p == str(port) and f"pid={pid}," in line:
+            return True
+    return False
+
+def linux_kill_port(port, expected_pid=None):
     port = int(port)
+    if expected_pid is not None and not linux_port_owned_by_pid(port, expected_pid):
+        return f"listener on :{port} changed; refresh and try again"
     # docker-published port?
-    cid = docker_container_for_port(port)
+    try:
+        cid = docker_container_for_port(port)
+    except DockerTimeout:
+        return "docker lookup timed out; nothing was stopped"
     if cid:
-        name = subprocess.run(["/usr/bin/docker", "inspect", "--format",
-                               "{{.Name}}", cid], capture_output=True,
-                              text=True).stdout.strip()
-        r = subprocess.run(["/usr/bin/docker", "stop", "--timeout", "5", cid],
-                           capture_output=True, text=True)
+        if expected_pid is not None and not linux_port_owned_by_pid(port, expected_pid):
+            return f"listener on :{port} changed; refresh and try again"
+        try:
+            name = subprocess.run(
+                ["/usr/bin/docker", "inspect", "--format", "{{.Name}}", cid],
+                capture_output=True, text=True, timeout=5).stdout.strip()
+            r = subprocess.run(["/usr/bin/docker", "stop", "--timeout", "5", cid],
+                               capture_output=True, text=True, timeout=10)
+        except subprocess.TimeoutExpired:
+            return "docker stop timed out; the container may still be running"
         return (f"stopped docker container {name} (was publishing :{port})"
                 if r.returncode == 0 else f"docker stop failed: {r.stderr.strip()}")
 
@@ -494,6 +595,8 @@ def linux_kill_port(port):
                 seg = line.split('(("', 1)[1]
                 name = seg.split('"', 1)[0]
                 pid = seg.split("pid=", 1)[1].split(",", 1)[0]
+                if expected_pid is not None and pid != str(expected_pid):
+                    continue
                 try:
                     os.kill(int(pid), signal.SIGTERM)
                     return f"sent SIGTERM to {name} (pid {pid}) on :{port}"
@@ -505,6 +608,8 @@ def linux_kill_port(port):
                     if r.returncode == 0:
                         return f"sent SIGTERM to {name} (pid {pid}) on :{port} (root)"
                     return f"no permission to kill pid {pid} (system service?)"
+    if expected_pid is not None:
+        return f"listener on :{port} changed; refresh and try again"
     return f"nothing listening on :{port}"
 
 kill_port = win_kill_port if IS_WIN else linux_kill_port
@@ -1052,7 +1157,7 @@ async function refresh(){
    const t=(s.links||[]).includes(p)?`<a href="http://${location.hostname}:${p}/" target=_blank rel=noopener>${p}</a>`:p;
    return s.new&&s.new.includes(p)?t+'<span class="badge">new</span>':t}).join(', ');
   tr.innerHTML=`<td title="${esc('pid '+s.pid+(s.cmd?'\\n'+s.cmd:''))}">${esc(s.name)}</td><td class=mem>${s.rss?s.rss.toFixed(0)+' MB':'-'}</td>
-   <td>${ports}</td><td>${sys?'':'<button data-p="'+s.ports[0]+'" data-n="'+esc(s.name+' (pid '+s.pid+')')+'">kill</button>'}</td>`;
+   <td>${ports}</td><td>${sys?'':'<button data-p="'+s.ports[0]+'" data-pid="'+s.pid+'" data-n="'+esc(s.name+' (pid '+s.pid+')')+'">kill</button>'}</td>`;
   tb.appendChild(tr);});
  document.querySelector('#msg').textContent=d.services.length+' services, '
   +(d.total/1024).toFixed(1)+' GB RAM — updated '+new Date().toLocaleTimeString();
@@ -1113,7 +1218,7 @@ for(const name of ADDONS){
 document.addEventListener('click',async e=>{
  const b=e.target.closest('button[data-p]');if(!b)return;
  if(!confirm('kill '+b.dataset.n+' on port '+b.dataset.p+'?'))return;
- const r=await fetch('/api/kill',{method:'POST',body:b.dataset.p});
+  const r=await fetch('/api/kill',{method:'POST',body:JSON.stringify({port:b.dataset.p,pid:b.dataset.pid})});
  document.querySelector('#msg').textContent=await r.text();
  setTimeout(refresh,1500);});
 /* poll only while visible: a background tab would otherwise run sudo ss
@@ -1185,7 +1290,8 @@ class Handler(BaseHTTPRequestHandler):
                 return
             ad = ADDONS[name]
             live = "live=1" in query
-            cmd = [ad["cmd"]] + (ad["live"] if live else ad["cached"])
+            base = ad["cmd"] if isinstance(ad["cmd"], list) else [ad["cmd"]]
+            cmd = base + (ad["live"] if live else ad["cached"])
             t_cached, t_live = ad["timeout"]
             try:
                 r = subprocess.run(cmd, capture_output=True, text=True,
@@ -1214,7 +1320,7 @@ class Handler(BaseHTTPRequestHandler):
             res = try_login(pin)
             if res == "ok":
                 tok = secrets.token_hex(32)
-                SESSIONS.add(tok)
+                SESSIONS[tok] = hashlib.sha256(pin.encode()).hexdigest()
                 self.send_response(200)
                 self.send_header("Set-Cookie",
                                  f"ports_auth={tok}; Path=/; Max-Age=2592000; HttpOnly; SameSite=Lax")
@@ -1230,11 +1336,17 @@ class Handler(BaseHTTPRequestHandler):
             return
         if self.path == "/api/kill":
             n = int(self.headers.get("Content-Length", 0))
-            port = self.rfile.read(n).decode().strip()
-            if not port.isdigit():
+            try:
+                req = json.loads(self.rfile.read(n).decode())
+                port = str(req["port"])
+                pid = str(req["pid"])
+            except (ValueError, KeyError, TypeError):
+                self._send(400, "bad kill request", "text/plain")
+                return
+            if not port.isdigit() or not pid.isdigit():
                 self._send(400, "bad port", "text/plain")
                 return
-            self._send(200, kill_port(port), "text/plain")
+            self._send(200, kill_port(port, int(pid)), "text/plain")
         else:
             self._send(404, "not found", "text/plain")
 
@@ -1249,6 +1361,8 @@ if __name__ == "__main__":
     if len(sys.argv) >= 2:
         if sys.argv[1] in ("-w", "--web"):
             web()
+        elif sys.argv[1] == "--set-pin":
+            set_pin()
         elif sys.argv[1] == "kill" and len(sys.argv) >= 3:
             print(kill_port(sys.argv[2]))
         else:

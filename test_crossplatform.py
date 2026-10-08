@@ -8,7 +8,7 @@ test_windows.py; Linux behavior by test_easywins.py / test_addon_path.py.
 
 Run: python3 test_crossplatform.py
 """
-import importlib.machinery, importlib.util, json, os, sys, tempfile, unittest
+import hashlib, importlib.machinery, importlib.util, json, os, subprocess, sys, tempfile, unittest
 from unittest import mock
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -178,6 +178,15 @@ class WinKill(unittest.TestCase):
             msg = pp.win_kill_port(1234)
         self.assertEqual(msg, "nothing listening on :1234")
 
+    def test_win_kill_port_rejects_changed_listener(self):
+        with mock.patch.object(pp, "win_listeners",
+                               return_value=[(1111, 6310, True)]), \
+             mock.patch.object(pp, "win_kill_pid") as kp, \
+             mock.patch.object(pp, "docker_container_for_port", return_value=None):
+            msg = pp.win_kill_port(6310, expected_pid=2222)
+        self.assertIn("listener on :6310 changed", msg)
+        kp.assert_not_called()
+
     def test_win_kill_port_docker_first(self):
         with mock.patch.object(pp, "docker_container_for_port", return_value="abc123"), \
              mock.patch.object(pp.subprocess, "run") as run, \
@@ -186,6 +195,18 @@ class WinKill(unittest.TestCase):
             msg = pp.win_kill_port(5432)
         self.assertIn("docker container pine_container", msg)
         wl.assert_not_called()
+
+    def test_docker_missing_is_not_an_error(self):
+        with mock.patch.object(pp.subprocess, "run",
+                               side_effect=FileNotFoundError):
+            self.assertIsNone(pp.docker_container_for_port(5432))
+
+    def test_docker_timeout_is_reported(self):
+        with mock.patch.object(
+                pp.subprocess, "run",
+                side_effect=subprocess.TimeoutExpired("docker", 5)):
+            with self.assertRaises(pp.DockerTimeout):
+                pp.docker_container_for_port(5432)
 
 
 class WinStats(unittest.TestCase):
@@ -216,6 +237,26 @@ class WinStats(unittest.TestCase):
 
 
 class PlatformConfig(unittest.TestCase):
+    def test_windows_needle_installed_location(self):
+        with tempfile.TemporaryDirectory() as td:
+            needle = os.path.join(td, "Needle", "bin", "needle.py")
+            os.makedirs(os.path.dirname(needle))
+            with open(needle, "w") as f:
+                f.write("# test")
+            with mock.patch.object(pp, "IS_WIN", True), \
+                 mock.patch.object(pp.shutil, "which", return_value=None), \
+                 mock.patch.dict(os.environ, {"LOCALAPPDATA": td}):
+                cmd = pp._addon_cmd("needle")
+        self.assertEqual(cmd, [sys.executable, needle])
+
+    def test_windows_python_addon_on_path(self):
+        found = os.path.join("C:\\", "tools", "needle.py")
+        with mock.patch.object(pp, "IS_WIN", True), \
+             mock.patch.object(pp.shutil, "which",
+                               side_effect=[None, found]):
+            cmd = pp._addon_cmd("needle")
+        self.assertEqual(cmd, [sys.executable, found])
+
     def test_linux_config_path(self):
         with mock.patch.object(pp, "IS_WIN", False):
             p = pp.CONFIG_PATH("pineports-pin")
@@ -230,13 +271,27 @@ class PlatformConfig(unittest.TestCase):
         self.assertTrue(os.path.isdir(os.path.dirname(p)))
 
     def test_docker_constant(self):
-        # this box is Linux -> absolute path preserved for the sudoers rule
-        self.assertEqual(pp.DOCKER, "/usr/bin/docker")
+        expected = "docker" if pp.IS_WIN else "/usr/bin/docker"
+        self.assertEqual(pp.DOCKER, expected)
 
-    def test_dispatch_is_linux_impl_here(self):
-        self.assertIs(pp.gather, pp.linux_gather)
-        self.assertIs(pp.sys_stats, pp.linux_sys_stats)
-        self.assertIs(pp.kill_port, pp.linux_kill_port)
+    def test_dispatch_matches_platform(self):
+        if pp.IS_WIN:
+            self.assertIs(pp.gather, pp.win_gather)
+            self.assertIs(pp.sys_stats, pp.win_sys_stats)
+            self.assertIs(pp.kill_port, pp.win_kill_port)
+        else:
+            self.assertIs(pp.gather, pp.linux_gather)
+            self.assertIs(pp.sys_stats, pp.linux_sys_stats)
+            self.assertIs(pp.kill_port, pp.linux_kill_port)
+
+    def test_set_pin(self):
+        with tempfile.TemporaryDirectory() as td, \
+             mock.patch.object(pp, "PIN_FILE", os.path.join(td, "pin")), \
+             mock.patch("getpass.getpass", side_effect=["1234", "1234"]):
+            pp.set_pin()
+            with open(pp.PIN_FILE) as f:
+                saved = f.read().strip()
+        self.assertEqual(saved, hashlib.sha256(b"1234").hexdigest())
 
 
 if __name__ == "__main__":

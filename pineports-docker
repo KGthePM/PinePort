@@ -6,17 +6,25 @@ hits the local socket — fast enough that cached and live are the same thing.
 Exit non-zero (with a message on stderr) if Docker isn't running.
 """
 import json
+import os
 import subprocess
 import sys
 
 FIELDS = ["Name", "CPUPerc", "MemUsage", "MemPerc", "NetIO", "State"]
+DOCKER = "docker" if os.name == "nt" else "/usr/bin/docker"
 
 
 def main():
-    r = subprocess.run(
-        ["/usr/bin/docker", "stats", "--no-stream", "--format",
-         "{{json .}}"],
-        capture_output=True, text=True, timeout=8)
+    try:
+        r = subprocess.run(
+            [DOCKER, "stats", "--no-stream", "--format", "{{json .}}"],
+            capture_output=True, text=True, timeout=8)
+    except OSError:
+        print("docker not installed", file=sys.stderr)
+        sys.exit(1)
+    except subprocess.TimeoutExpired:
+        print("docker stats timed out", file=sys.stderr)
+        sys.exit(1)
     if r.returncode != 0:
         print(r.stderr.strip() or "docker not running", file=sys.stderr)
         sys.exit(1)
