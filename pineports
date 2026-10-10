@@ -755,7 +755,9 @@ wasteland:{bg:'#120c0a',fg:'#e6d9c3',dim:'#9a8a76',line:'#3a2620',accent:'#d0643
 tetromino:{bg:'#0a0c24',fg:'#e8ecff',dim:'#8a90c0',line:'#1e2352',accent:'#31c7ef',kill:'#ef2029',killbg:'#2a0c18',barbg:'#161a44',warn:'#f7d308',warnbg:'#3a3410',
  _fx:'tet',_bar:'#06071a',_dot:'conic-gradient(#31c7ef 0 25%,#f7d308 0 50%,#ef2029 0 75%,#42d642 0)'},
 grid:{bg:'#05061a',fg:'#dff6ff',dim:'#7f8fc4',line:'#1b2a5c',accent:'#3ce8ff',kill:'#ff7a1a',killbg:'#2a1206',barbg:'#0d1438',warn:'#ffd23f',warnbg:'#2e2a10',
- _fx:'neon',_bar:'#05061a',_dot:'linear-gradient(#05061a 48%,#e1beff 48% 54%,#3ce8ff 54% 60%,#0d1438 60%)'}};
+ _fx:'neon',_bar:'#05061a',_dot:'linear-gradient(#05061a 48%,#e1beff 48% 54%,#3ce8ff 54% 60%,#0d1438 60%)'},
+saucer:{bg:'#0c0716',fg:'#ecf6e4',dim:'#9a8fb5',line:'#2b2145',accent:'#8dff5a',kill:'#ff5c9a',killbg:'#3a0f26',barbg:'#1c1433',warn:'#ffd447',warnbg:'#3a3212',
+ _fx:'ufo',_bar:'#0c0716',_dot:'radial-gradient(50% 18% at 50% 60%,#c9c3d9 92%,transparent),radial-gradient(circle at 50% 50%,#8dff5a 0 22%,#0c0716 27%)'}};
 /* _keys aren't colors: _fx turns on an effect skin (FX_CSS), _bar tints the
    phone's browser bar instead of bg, _dot styles the picker swatch */
 /* auto follows the OS light/dark setting */
@@ -1393,7 +1395,7 @@ width:calc(var(--s)*4);height:calc(var(--s)*2);--g:linear-gradient(var(--pc) 0 0
 background-position:var(--at);background-size:calc(var(--s) - 1px) calc(var(--s) - 1px);background-repeat:no-repeat}
 html[data-fx=tet] tr.drop td{animation:tet-in .3s steps(3) calc(min(var(--r),12)*70ms) both}
 html[data-fx=tet] tr.drop td:first-child::before{animation:tet-fall .4s steps(4) calc(min(var(--r),12)*70ms) both}
-html[data-fx=tet] tr.clr td{padding:0;border:0}
+html[data-fx=tet] tr.clr td{padding:0;border:0}html[data-fx=tet] tr.clr span{display:none}
 html[data-fx=tet] tr.clr div{height:var(--h);background:repeating-linear-gradient(90deg,#fff 0 calc(1.25rem - 2px),#c8cce8 0 1.25rem);
 animation:tet-clr .8s both}
 html[data-fx=tet] a{text-decoration:none;border-bottom:1px dotted}
@@ -1491,6 +1493,97 @@ html[data-fx=neon] h1::before{font-size:1.05rem;letter-spacing:.28em}html[data-f
 html[data-fx=neon] table{font-size:.8rem}html[data-fx=neon] td{padding:.45rem .35rem}html[data-fx=neon] th{padding:.2rem .35rem;letter-spacing:.15em}
 html[data-fx=neon] button[data-p]{padding:.25rem .45rem}html[data-fx=neon] button[data-p]::after{content:'\\2715';font-size:.85rem}
 html[data-fx=neon] .badge{padding-left:.4rem;background-size:.4rem 2px}}
+/* Saucer: a violet night sky with a pale moon in the corner. Stars sit on <html>, a second
+   star layer on html::before twinkles (opacity only) and a saucer drifts
+   behind the page on html::after every 40s. No page panel: the stats bar,
+   table and cards float on the sky as rounded glass. refresh() tags rows
+   whose pid is new with .drop (they beam down) and puts a .clr row where a
+   pid vanished: a saucer lights it up, its name rises into the beam, and the
+   row closes up. ABDUCTED counts them. Kill reads BEAM UP, new ports ping.
+   Rounded system fonts only. */
+html[data-fx=ufo]{--gr:#8dff5a;--rnd:ui-rounded,"SF Pro Rounded","Arial Rounded MT Bold","Varela Round",system-ui,-apple-system,"Segoe UI",sans-serif;
+--glass:rgba(22,14,44,.74);--edge:rgba(141,255,90,.22);
+--ship:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 84 44'%3E%3Cpath d='M27 23a15 14 0 0 1 30 0z' fill='%238dff5a' fill-opacity='.5' stroke='%23d4ffbd' stroke-width='1.2'/%3E%3Cellipse cx='42' cy='29' rx='24' ry='6' fill='%23544c70'/%3E%3Cellipse cx='42' cy='25' rx='40' ry='8.5' fill='%23aaa3c2'/%3E%3Cellipse cx='42' cy='23' rx='33' ry='4.5' fill='%23dcd7ea'/%3E%3Cg fill='%238dff5a'%3E%3Ccircle cx='14' cy='26.5' r='2'/%3E%3Ccircle cx='42' cy='29' r='2'/%3E%3Ccircle cx='70' cy='26.5' r='2'/%3E%3C/g%3E%3Cg fill='%23ffd447'%3E%3Ccircle cx='28' cy='28.3' r='2'/%3E%3Ccircle cx='56' cy='28.3' r='2'/%3E%3C/g%3E%3C/svg%3E") center/contain no-repeat;
+background-color:#0c0716;min-height:100%;background-image:
+radial-gradient(circle at calc(100% - 4rem) 2.6rem,rgba(80,70,110,.5) 0 .45rem,transparent .55rem),
+radial-gradient(circle at calc(100% - 2.5rem) 3.9rem,rgba(80,70,110,.4) 0 .7rem,transparent .8rem),
+radial-gradient(circle at calc(100% - 3.9rem) 4.4rem,rgba(80,70,110,.35) 0 .3rem,transparent .4rem),
+radial-gradient(circle at calc(100% - 3.2rem) 3.4rem,#e9e4d0 0 2.3rem,rgba(233,228,208,.16) 2.4rem,transparent 5rem),
+radial-gradient(1px 1px at 31px 47px,#fff,transparent),radial-gradient(1px 1px at 142px 18px,#d8ccff,transparent),
+radial-gradient(1.5px 1.5px at 88px 133px,#fff,transparent),radial-gradient(1px 1px at 173px 171px,#fff,transparent),
+radial-gradient(1px 1px at 12px 189px,#c9ffb0,transparent),
+linear-gradient(#0c0716,#150b2a 60%,#0a1410)}
+html[data-fx=ufo]{background-size:auto,auto,auto,auto,197px 211px,197px 211px,197px 211px,197px 211px,197px 211px,auto}
+html[data-fx=ufo]::before{content:'';position:fixed;inset:0;z-index:-2;pointer-events:none;background:
+radial-gradient(1.5px 1.5px at 64px 92px,#fff,transparent),radial-gradient(1px 1px at 201px 37px,#fff,transparent),
+radial-gradient(2px 2px at 150px 240px,#e6dcff,transparent),radial-gradient(1px 1px at 22px 263px,#fff,transparent);
+background-size:263px 293px;animation:twinkle 5s ease-in-out infinite alternate}
+html[data-fx=ufo]::after{content:'';position:fixed;top:.5rem;left:0;width:84px;height:44px;z-index:-1;pointer-events:none;
+background:var(--ship);filter:drop-shadow(0 0 6px rgba(141,255,90,.5));transform:translateX(-120px);animation:fly 40s linear 2s infinite}
+html[data-fx=ufo] body{font-family:var(--rnd);margin:1.2rem auto 2rem;background:transparent}
+html[data-fx=ufo] h1{font-size:0!important;margin:2.6rem 0 1.1rem;display:flex;flex-direction:column;align-items:flex-start;gap:.5rem}
+html[data-fx=ufo] h1::before{content:'PINEPORT';font:700 1.45rem/1 var(--rnd);letter-spacing:.22em;color:#e9ffdc;
+text-shadow:0 0 6px rgba(141,255,90,.8),0 0 22px rgba(141,255,90,.4)}
+html[data-fx=ufo] h1::after{content:'ABDUCTED ' attr(data-lines) '\\A' attr(data-host);white-space:pre;
+font:600 .62rem/1.6 var(--rnd);letter-spacing:.2em;color:var(--dim)}
+html[data-fx=ufo] :is(#stats,.card,table,#tpanel){background:var(--glass);border:1px solid var(--edge);border-radius:16px;
+box-shadow:0 0 0 1px rgba(0,0,0,.3),0 8px 24px rgba(0,0,0,.35),inset 0 1px 0 rgba(255,255,255,.06);-webkit-backdrop-filter:blur(3px);backdrop-filter:blur(3px)}
+html[data-fx=ufo] #stats{padding:.7rem .9rem}
+html[data-fx=ufo] #stats b{color:var(--gr);font-weight:600;text-shadow:0 0 6px rgba(141,255,90,.45)}
+html[data-fx=ufo] .meter{height:.4rem;border-radius:9px;background:rgba(141,255,90,.1)}
+html[data-fx=ufo] .meter i{border-radius:9px;background:linear-gradient(90deg,rgba(141,255,90,.35),var(--gr));box-shadow:0 0 6px rgba(141,255,90,.6)}
+html[data-fx=ufo] .warn i{background:var(--warn);box-shadow:0 0 6px var(--warn)}html[data-fx=ufo] .crit i{background:var(--kill);box-shadow:0 0 6px var(--kill)}
+html[data-fx=ufo] #theme button{background:var(--glass);border-color:var(--edge)}html[data-fx=ufo] #tpanel{border-radius:16px}
+html[data-fx=ufo] #tpanel button{border-radius:999px}html[data-fx=ufo] #tpanel button.sel{background:rgba(141,255,90,.12)}
+html[data-fx=ufo] h2{font-family:var(--rnd);letter-spacing:.06em;text-shadow:0 0 8px rgba(141,255,90,.4)}
+html[data-fx=ufo] table{border-collapse:separate;border-spacing:0;padding:.2rem .3rem}
+html[data-fx=ufo] th{font-size:.66rem;font-weight:600;letter-spacing:.18em;border-bottom:1px solid var(--edge)}
+html[data-fx=ufo] td{border-bottom:1px solid rgba(154,143,181,.13)}html[data-fx=ufo] tbody tr:last-child td{border-bottom:0}
+html[data-fx=ufo] td:first-child{overflow-wrap:break-word;font-weight:600}html[data-fx=ufo] .mem{white-space:nowrap;color:var(--dim)}
+html[data-fx=ufo] tbody tr:hover td{background:rgba(141,255,90,.06)}
+html[data-fx=ufo] a{text-decoration:none;border-bottom:1px dotted rgba(141,255,90,.5)}
+html[data-fx=ufo] tr.drop td{animation:ufo-in .7s ease-out calc(min(var(--r),12)*60ms) both}
+html[data-fx=ufo] .badge{font-size:0;padding:0;margin-left:.3rem;background:none;vertical-align:.05rem;white-space:nowrap}
+html[data-fx=ufo] .badge::before{content:'';display:inline-block;width:.38rem;height:.38rem;border-radius:50%;vertical-align:.05rem;
+background:var(--warn);animation:ping 2s ease-out infinite}
+html[data-fx=ufo] .badge::after{content:'NEW';margin-left:.22rem;font:700 .56rem/1 var(--rnd);letter-spacing:.1em;color:var(--warn)}
+html[data-fx=ufo] button{font-family:var(--rnd);border-radius:999px;-webkit-tap-highlight-color:transparent}
+html[data-fx=ufo] button[data-p]{font-size:0;padding:.3rem .7rem;white-space:nowrap;background:rgba(255,92,154,.1)}
+html[data-fx=ufo] button[data-p]::after{content:'BEAM UP';font-size:.66rem;font-weight:700;letter-spacing:.08em}
+html[data-fx=ufo] button[data-p]:hover,html[data-fx=ufo] button[data-p]:active{background:var(--kill);color:#1a0612;box-shadow:0 0 12px var(--kill)}
+html[data-fx=ufo] tr.clr td{padding:0;border:0}
+html[data-fx=ufo] tr.clr div{position:relative;height:var(--h);animation:ufo-gone 1s ease-in both}
+html[data-fx=ufo] tr.clr div::before{content:'';position:absolute;left:0;bottom:0;width:min(13rem,62%);height:calc(var(--h) + 3.2rem);
+background:radial-gradient(50% 1.2rem at 50% 100%,rgba(200,255,170,.55),transparent),
+linear-gradient(90deg,transparent 15%,rgba(225,255,210,.28) 50%,transparent 85%),linear-gradient(rgba(141,255,90,.1),rgba(141,255,90,.38));
+clip-path:polygon(38% 0,62% 0,100% 100%,0 100%);
+transform-origin:50% 0;animation:beam 1s both}
+html[data-fx=ufo] tr.clr div::after{content:'';position:absolute;left:calc(min(13rem,62%)/2 - 27px);bottom:calc(var(--h) + 2.2rem);width:54px;height:28px;
+background:var(--ship);filter:drop-shadow(0 0 6px var(--gr));animation:ship 1s both}
+html[data-fx=ufo] tr.clr span{position:absolute;left:0;bottom:0;width:min(13rem,62%);line-height:var(--h);text-align:center;white-space:nowrap;
+font-weight:700;color:#f0ffe8;text-shadow:0 0 8px var(--gr);animation:lift 1s ease-in both}
+html[data-fx=ufo] #msg{color:var(--dim);font-size:.75rem;letter-spacing:.06em}
+html[data-fx=ufo] body:has(#pin){margin:0;min-height:100vh}
+html[data-fx=ufo] body:has(#pin) h1{flex-direction:column;align-items:center;gap:.9rem;margin:0 0 1.6rem}
+html[data-fx=ufo] body:has(#pin) h1::after{content:'IDENTIFY YOURSELF\\A' attr(data-host);text-align:center}
+html[data-fx=ufo] #pin{border-radius:999px;border-color:var(--edge);background:var(--glass);color:var(--gr);outline:none;text-shadow:0 0 6px var(--gr)}
+html[data-fx=ufo] #pin:focus{border-color:var(--gr);box-shadow:0 0 14px rgba(141,255,90,.45)}
+html[data-fx=ufo] body:has(#pin) button{font-size:0;border-radius:999px;background:rgba(141,255,90,.14);border-color:var(--gr)}
+html[data-fx=ufo] body:has(#pin) button::after{content:'MAKE CONTACT';font-size:.8rem;font-weight:700;letter-spacing:.06em;color:var(--gr)}
+@media (max-width:600px){html[data-fx=ufo] body{margin:.5rem;padding:0 .5rem 1rem}
+html[data-fx=ufo] h1{margin-top:2.4rem}html[data-fx=ufo] h1::before{font-size:1.15rem;letter-spacing:.16em}
+html[data-fx=ufo] table{font-size:.8rem;padding:.1rem}html[data-fx=ufo] td{padding:.5rem .35rem}html[data-fx=ufo] th{padding:.45rem .35rem;letter-spacing:.12em}
+html[data-fx=ufo] .badge{margin-left:.2rem}html[data-fx=ufo] .badge::after{display:none}
+html[data-fx=ufo] button[data-p]{padding:.3rem .5rem}html[data-fx=ufo] button[data-p]::after{content:'BEAM';font-size:.62rem}}
+@keyframes twinkle{from{opacity:.25}to{opacity:1}}
+@keyframes fly{0%{transform:translate(-120px,1.2rem) rotate(-4deg)}5%{transform:translate(25vw,.4rem) rotate(3deg)}
+10%{transform:translate(50vw,1.4rem) rotate(-3deg)}15%{transform:translate(75vw,.3rem) rotate(4deg)}20%,100%{transform:translate(calc(100vw + 40px),1rem) rotate(-2deg)}}
+@keyframes ping{0%{box-shadow:0 0 0 0 rgba(255,212,71,.7)}70%,100%{box-shadow:0 0 0 .4rem rgba(255,212,71,0)}}
+@keyframes ufo-in{0%{opacity:0;background:rgba(141,255,90,.35)}40%{opacity:1;background:rgba(141,255,90,.25)}}
+@keyframes ufo-gone{0%,75%{height:var(--h)}100%{height:0}}
+@keyframes beam{0%{opacity:0;transform:scaleY(0)}18%{opacity:1;transform:scaleY(1)}62%{opacity:1;transform:scaleY(1)}80%,100%{opacity:0;transform:scaleY(0)}}
+@keyframes ship{0%{opacity:0;transform:translateY(-1rem)}14%,68%{opacity:1;transform:none}85%,100%{opacity:0;transform:translate(3rem,-2.5rem) scale(.6)}}
+@keyframes lift{0%,15%{opacity:1;transform:none}65%{opacity:0;transform:translateY(-3rem) scale(.25)}100%{opacity:0;transform:translateY(-3rem) scale(.25)}}
 @keyframes grid-run{to{transform:perspective(300px) translateY(120px) rotateX(90deg) translateY(40px)}}
 @keyframes grid-boot{from{opacity:0;box-shadow:0 0 60px rgba(60,232,255,.8)}}
 @keyframes streak{from{transform:translateX(-100%)}to{transform:translateX(300%);opacity:0}}
@@ -1507,7 +1600,7 @@ html[data-fx=neon] .badge{padding-left:.4rem;background-size:.4rem 2px}}
 @keyframes pulse{50%{opacity:.55}}
 @keyframes flap-top{to{transform:perspective(500px) rotateX(-90deg);filter:brightness(.5)}}
 @keyframes flap-bot{from{transform:perspective(500px) rotateX(90deg);filter:brightness(.5)}}
-@media (prefers-reduced-motion:reduce){html[data-fx] *,html[data-fx] *::before,html[data-fx] *::after,html[data-fx]::before,html[data-fx]::after{animation:none!important}html[data-fx=flap] .fl,html[data-fx=rust]::before,html[data-fx=tet] .clr{display:none}}"""
+@media (prefers-reduced-motion:reduce){html[data-fx] *,html[data-fx] *::before,html[data-fx] *::after,html[data-fx]::before,html[data-fx]::after{animation:none!important}html[data-fx=flap] .fl,html[data-fx=rust]::before,html[data-fx=tet] .clr,html[data-fx=ufo] .clr,html[data-fx=ufo]::after{display:none}}"""
 
 # Press Start 2P by CodeMan38 (SIL OFL 1.1), subset to printable ASCII, woff2.
 # Tetromino's pixel font, embedded so the page needs no network.
@@ -1611,7 +1704,7 @@ function rate(b){return b>=1048576?(b/1048576).toFixed(1)+'MB/s':b>=1024?Math.ro
 function meter(pct){const cls=pct>90?'crit':pct>75?'warn':'';
  return `<span class="meter ${cls}"><i style="width:${Math.min(pct,100)}%"></i></span>`}
 let cells={};  /* last {text, html} per pid+column, so the flap skin flips only what changed */
-let lines=0;   /* rows the tetromino skin has cleared this visit */
+let lines=0;   /* rows the tetromino skin has cleared / the saucer has abducted this visit */
 async function refresh(){
  const h=document.documentElement;h.classList.add('io');setTimeout(()=>h.classList.remove('io'),200);
  const r=await fetch('/api/services');const d=await r.json();
@@ -1624,13 +1717,13 @@ async function refresh(){
   `<span>load <b>${st.load1}</b></span><span>up <b>${st.uptime}</b></span>`+
   `<span>NET in <b>${rate(st.net_down)}</b> out <b>${rate(st.net_up)}</b></span>`+
   `<span>conns <b>${st.conns}</b></span>`;
- const tb=document.querySelector('#t tbody'),was=cells,fx=h.dataset.fx;
- /* tetromino: remember each row's pid and height so a vanished one can clear */
- const old=fx==='tet'?[...tb.rows].map(r=>[r.dataset.pid,r.offsetHeight]):[];
+ const tb=document.querySelector('#t tbody'),was=cells,fx=h.dataset.fx,gone=fx==='tet'||fx==='ufo';
+ /* tetromino/saucer: remember each row's pid and height so a vanished one can clear */
+ const old=gone?[...tb.rows].map(r=>[r.dataset.pid,r.offsetHeight]):[];
  tb.innerHTML='';cells={};let fresh=0;
  d.services.forEach(s=>{
   const tr=document.createElement('tr');tr.dataset.pid=s.pid;
-  if(fx==='tet'&&!was[s.pid+'.0']){tr.className='drop';tr.style.setProperty('--r',fresh++)}
+  if(gone&&!was[s.pid+'.0']){tr.className='drop';tr.style.setProperty('--r',fresh++)}
   const sys=own.some(o=>s.name.includes(o));
   const ports=s.ports.map(p=>{
    const t=(s.links||[]).includes(p)?`<a href="http://${location.hostname}:${p}/" target=_blank rel=noopener>${p}</a>`:p;
@@ -1646,8 +1739,10 @@ async function refresh(){
  const live=new Set(d.services.map(s=>String(s.pid)));
  old.forEach(([pid,ht],i)=>{if(!pid||live.has(pid))return;
   const tr=document.createElement('tr');tr.className='clr';
-  tr.innerHTML=`<td colspan=4><div style="--h:${ht}px"></div></td>`;
-  tr.addEventListener('animationend',()=>tr.remove());
+  tr.innerHTML=`<td colspan=4><div style="--h:${ht}px"><span>${esc((was[pid+'.0']||{}).t)}</span></div></td>`;
+  /* the saucer animates the beam, ghost name and box separately: wait for the box */
+  const box=tr.querySelector('div');
+  box.addEventListener('animationend',e=>{if(e.target===box&&!e.pseudoElement)tr.remove()});
   tb.insertBefore(tr,tb.rows[i]||null);document.querySelector('h1').dataset.lines=++lines;});
  document.querySelector('#msg').textContent=d.services.length+' services, '
   +(d.total/1024).toFixed(1)+' GB RAM — updated '+new Date().toLocaleTimeString();
