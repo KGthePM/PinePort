@@ -646,7 +646,9 @@ phosphor:{bg:'#050a05',fg:'#33ff66',dim:'#1f9940',line:'#123318',accent:'#66ff99
 amber:{bg:'#0a0700',fg:'#ffb000',dim:'#a87400',line:'#3a2a00',accent:'#ffcc4d',kill:'#ff5f3f',killbg:'#2e1408',barbg:'#2a1e00',warn:'#fff1c2',warnbg:'#3d3000'},
 contrast:{bg:'#000',fg:'#fff',dim:'#ccc',line:'#666',accent:'#ff0',kill:'#ff4040',killbg:'#300',barbg:'#333',warn:'#f90',warnbg:'#3a2400'},
 retro:{bg:'#0b1a0f',fg:'#39ff6a',dim:'#1f9e45',line:'#14361e',accent:'#66ff99',kill:'#ff5555',killbg:'#2a1010',barbg:'#0f2412',warn:'#ccff33',warnbg:'#2a3310',
- _fx:'crt',_bar:'#d8d0b8',_dot:'radial-gradient(#39ff6a 38%,#d8d0b8 44%)'}};
+ _fx:'crt',_bar:'#d8d0b8',_dot:'radial-gradient(#39ff6a 38%,#d8d0b8 44%)'},
+departures:{bg:'#0b0b0b',fg:'#f4f1e8',dim:'#8a8577',line:'#262626',accent:'#ffc61a',kill:'#ff4b3e',killbg:'#2a0d0b',barbg:'#1a1a1a',warn:'#ff9f1a',warnbg:'#2e1f08',
+ _fx:'flap',_bar:'#ffc61a',_dot:'linear-gradient(#ffc61a 0 45%,#111 45% 55%,#e0ad00 55%)'}};
 /* _keys aren't colors: _fx turns on an effect skin (FX_CSS), _bar tints the
    phone's browser bar instead of bg, _dot styles the picker swatch */
 /* auto follows the OS light/dark setting */
@@ -1100,7 +1102,8 @@ ICON_HEAD = """<link rel="icon" type="image/png" href="/icon.png">
 <meta name="theme-color" content="#111">"""
 
 # Effect skins, turned on by a theme's _fx key (html[data-fx=...]). CSS only, so
-# nothing runs between polls; the one animation plays once when the skin appears.
+# nothing runs between polls; animations play only when the skin appears or a
+# poll redraws the rows.
 # Retro CRT matches Needle's desklet theme: beige bezel, green phosphor screen,
 # square block gauges, and a badge + power LED that blinks on each refresh.
 FX_CSS = """html[data-fx=crt]{background:linear-gradient(#d8d0b8,#b9b096);padding:.8rem .8rem 0}
@@ -1120,7 +1123,70 @@ html[data-fx=crt] .meter i{color:var(--accent);background:repeating-linear-gradi
 html[data-fx=crt] .warn i{color:var(--warn)}html[data-fx=crt] .crit i{color:var(--kill)}
 @keyframes crt-on{0%{transform:scale(.6,.004);filter:brightness(3)}35%{transform:scale(1,.004)}
 70%{transform:none;filter:brightness(1.6)}100%{transform:none;filter:none}}
-@media (prefers-reduced-motion:reduce){html[data-fx] body{animation:none}}"""
+/* Departures: a split-flap airport board. Yellow wayfinding header, every cell
+   is a flap with a hinge line. When a cell's text changes, refresh() lays three
+   .fl copies over it: old bottom half (static), old top half (falls away about
+   the hinge), new bottom half (lands over the old one). Cascades diagonally on
+   first load. Only the overlays move, never the cell (iOS mangles transforms on
+   table cells). Fixed table layout so no font can push columns off the board.
+   Columns/badge/kill relabel via CSS content. */
+html[data-fx=flap]{background:#1e1f22;--tile:#1c1c1c;
+--hinge:linear-gradient(rgba(255,255,255,.05) 0 calc(50% - 1px),#000 calc(50% - 1px) calc(50% + 1px),rgba(0,0,0,.3) calc(50% + 1px))}
+html[data-fx=flap] body{box-sizing:border-box;margin:1.2rem auto 2rem;padding:1rem 1.1rem 1.2rem;background:#0b0b0b;
+border:6px solid #2b2c30;box-shadow:inset 0 0 0 1px #000,0 10px 30px rgba(0,0,0,.5);text-transform:uppercase;font-weight:700}
+html[data-fx=flap] h1{font-size:0!important;color:#0b0b0b!important;margin:0 0 1rem;padding:.5rem .7rem;background:#ffc61a;
+display:flex;align-items:center;justify-content:space-between;gap:1rem}
+html[data-fx=flap] h1::before{content:'\\2708\\FE0E  PINEPORT';white-space:pre;font-size:1.25rem;letter-spacing:.12em}
+html[data-fx=flap] h1::after{content:'DEPARTURES\\A' attr(data-host);white-space:pre;text-align:right;line-height:1.3;font-size:.65rem;letter-spacing:.2em}
+html[data-fx=flap] table{border-collapse:separate;border-spacing:4px;font-size:.9rem;table-layout:fixed}
+html[data-fx=flap] th:nth-child(2),html[data-fx=flap] th:nth-child(4){width:6.5rem}
+html[data-fx=flap] th{font-size:0;border:0;padding:.2rem .6rem}
+html[data-fx=flap] th::after{font-size:.7rem;letter-spacing:.2em;content:'FLIGHT'}
+html[data-fx=flap] th:nth-child(2)::after{content:'MEM'}html[data-fx=flap] th:nth-child(3)::after{content:'GATE'}
+html[data-fx=flap] th:nth-child(4)::after{content:'REMARKS'}
+html[data-fx=flap] td{border:0;padding:.45rem .6rem;letter-spacing:.15em;background:var(--hinge),var(--tile);
+border-radius:3px;box-shadow:inset 0 1px 0 rgba(255,255,255,.06);position:relative;overflow-wrap:break-word}
+html[data-fx=flap] .fl{position:absolute;inset:0;padding:inherit;display:flex;align-items:center;pointer-events:none;
+border-radius:3px;background:var(--hinge),var(--tile);--d:calc(var(--r,0)*45ms + var(--c,0)*30ms)}
+html[data-fx=flap] .fl>span{width:100%}
+html[data-fx=flap] .fl-ob,html[data-fx=flap] .fl-nb{clip-path:inset(50% 0 0 0)}
+html[data-fx=flap] .fl-ot{clip-path:inset(0 0 50% 0);animation:flap-top .16s ease-in var(--d) both}
+html[data-fx=flap] .fl-nb{animation:flap-bot .16s ease-out calc(var(--d) + .16s) both}
+html[data-fx=flap] td:last-child{letter-spacing:.1em;font-size:.75rem;text-align:center;width:1%}
+html[data-fx=flap] td:last-child:empty::after{content:'ON TIME';color:var(--dim)}
+html[data-fx=flap] td:nth-child(2){--c:1}html[data-fx=flap] td:nth-child(3){--c:2}html[data-fx=flap] td:nth-child(4){--c:3}
+html[data-fx=flap] tr:nth-child(2){--r:1}html[data-fx=flap] tr:nth-child(3){--r:2}html[data-fx=flap] tr:nth-child(4){--r:3}
+html[data-fx=flap] tr:nth-child(5){--r:4}html[data-fx=flap] tr:nth-child(6){--r:5}html[data-fx=flap] tr:nth-child(7){--r:6}
+html[data-fx=flap] tr:nth-child(8){--r:7}html[data-fx=flap] tr:nth-child(9){--r:8}html[data-fx=flap] tr:nth-child(n+10){--r:9}
+html[data-fx=flap] a{text-decoration:none}html[data-fx=flap] a:hover{text-decoration:underline}
+html[data-fx=flap] .badge{font-size:0;background:none;margin:0;padding:0;border-radius:0}
+html[data-fx=flap] .badge::after{content:'\\A0 BOARDING';display:inline-block;overflow-wrap:normal;font-size:.9rem;color:#3ddc84;text-shadow:0 0 6px rgba(61,220,132,.5)}
+html[data-fx=flap] button{border-radius:0;font-weight:700;background:var(--hinge),var(--killbg)}
+html[data-fx=flap] button[data-p]{font-size:0;padding:.25rem .6rem}
+html[data-fx=flap] button[data-p]::after{content:'CANCEL';font-size:.75rem;letter-spacing:.1em}
+html[data-fx=flap] button[data-p]:hover{background:var(--kill)}
+html[data-fx=flap] #stats{border:0;border-radius:0;background:#141414;letter-spacing:.05em}
+html[data-fx=flap] .meter,html[data-fx=flap] .meter i{border-radius:0}
+html[data-fx=flap] .meter i{color:var(--accent);background:repeating-linear-gradient(90deg,currentColor 0 .3rem,transparent .3rem .4rem)}
+html[data-fx=flap] .warn i{color:var(--warn)}html[data-fx=flap] .crit i{color:var(--kill)}
+html[data-fx=flap] #msg{color:var(--dim);font-size:.75rem;letter-spacing:.15em}
+html[data-fx=flap] body:has(#pin){margin:0;border:0;box-shadow:none;min-height:100vh}
+@media (max-width:600px){html[data-fx=flap] body{margin:.5rem;padding:.7rem .6rem}html[data-fx=flap] table{font-size:.8rem}
+html[data-fx=flap] table{border-spacing:3px}html[data-fx=flap] th{padding:.2rem .35rem}
+html[data-fx=flap] th::after{letter-spacing:.08em}
+html[data-fx=flap] th:nth-child(2){width:4.1rem}html[data-fx=flap] th:nth-child(3){width:24%}
+html[data-fx=flap] th:nth-child(4){width:1.8rem}html[data-fx=flap] th:nth-child(4)::after{content:''}html[data-fx=flap] h1::before{font-size:1rem}
+html[data-fx=flap] td{padding:.4rem .35rem;letter-spacing:.02em}html[data-fx=flap] td:last-child{padding:.3rem}
+html[data-fx=flap] button[data-p]{padding:.15rem .4rem}html[data-fx=flap] button[data-p]::after{content:'\\2715';font-size:.9rem;letter-spacing:0}
+html[data-fx=flap] td:last-child:empty::after{content:'\\2713';font-size:1rem}
+html[data-fx=flap] .badge::after{content:'BOARDING';font-size:.55rem;letter-spacing:.04em;margin-left:.3em}}
+html[data-fx=flap] body:has(#pin) h1::after{content:'GATE CLOSED\\A' attr(data-host)}
+html[data-fx=flap] #pin{font-size:1.6rem;font-weight:700;border:0;border-radius:3px;background:var(--hinge),var(--tile);color:var(--accent)}
+html[data-fx=flap] body:has(#pin) button{font-size:0;border-radius:0;background:#ffc61a;border-color:#ffc61a}
+html[data-fx=flap] body:has(#pin) button::after{content:'BOARD';font-size:.9rem;color:#0b0b0b;letter-spacing:.15em}
+@keyframes flap-top{to{transform:perspective(500px) rotateX(-90deg);filter:brightness(.5)}}
+@keyframes flap-bot{from{transform:perspective(500px) rotateX(90deg);filter:brightness(.5)}}
+@media (prefers-reduced-motion:reduce){html[data-fx] *{animation:none!important}html[data-fx=flap] .fl{display:none}}"""
 
 PAGE_TMPL = """<!DOCTYPE html><html><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
@@ -1154,7 +1220,7 @@ border-radius:3px;vertical-align:middle;margin-left:.35rem;overflow:hidden}
 border:2px solid transparent;display:inline-block}
 #theme span.sel{border-color:var(--fg)}
 __FX__</style></head><body>
-<h1>PinePorts — what's running on __HOST__</h1>
+<h1 data-host="__HOST__">PinePorts — what's running on __HOST__</h1>
 <div id=stats></div>
 <div id=theme></div>
 <table id=t><thead><tr>
@@ -1170,6 +1236,7 @@ function applyTheme(t){theme=t;try{localStorage.setItem('pp_theme',t)}catch(e){}
  document.querySelectorAll('#theme span').forEach(el=>el.classList.toggle('sel',el.dataset.t===t));}
 function meter(pct){const cls=pct>90?'crit':pct>75?'warn':'';
  return `<span class="meter ${cls}"><i style="width:${Math.min(pct,100)}%"></i></span>`}
+let cells={};  /* last {text, html} per pid+column, so the flap skin flips only what changed */
 async function refresh(){
  const h=document.documentElement;h.classList.add('io');setTimeout(()=>h.classList.remove('io'),200);
  const r=await fetch('/api/services');const d=await r.json();
@@ -1180,7 +1247,7 @@ async function refresh(){
   `<span>DISK <b>${st.disk_pct}%</b>${meter(st.disk_pct)}</span>`+
   `<span>free <b>${st.disk_free}G</b></span>`+
   `<span>load <b>${st.load1}</b></span><span>up <b>${st.uptime}</b></span>`;
- const tb=document.querySelector('#t tbody');tb.innerHTML='';
+ const tb=document.querySelector('#t tbody'),was=cells;tb.innerHTML='';cells={};
  d.services.forEach(s=>{
   const tr=document.createElement('tr');
   const sys=own.some(o=>s.name.includes(o));
@@ -1189,6 +1256,11 @@ async function refresh(){
    return s.new&&s.new.includes(p)?t+'<span class="badge">new</span>':t}).join(', ');
   tr.innerHTML=`<td title="${esc('pid '+s.pid+(s.cmd?'\\n'+s.cmd:''))}">${esc(s.name)}</td><td class=mem>${s.rss?s.rss.toFixed(0)+' MB':'-'}</td>
    <td>${ports}</td><td>${sys?'':'<button data-p="'+s.ports[0]+'" data-pid="'+s.pid+'" data-n="'+esc(s.name+' (pid '+s.pid+')')+'">kill</button>'}</td>`;
+  const flap=document.documentElement.dataset.fx==='flap';
+  [...tr.cells].forEach((td,i)=>{const k=s.pid+'.'+i,o=was[k]||{t:'',h:''},h=td.innerHTML;
+   cells[k]={t:td.textContent,h};
+   if(flap&&o.t!==cells[k].t)td.insertAdjacentHTML('beforeend',
+    `<div class="fl fl-ob"><span>${o.h}</span></div><div class="fl fl-ot"><span>${o.h}</span></div><div class="fl fl-nb"><span>${h}</span></div>`)});
   tb.appendChild(tr);});
  document.querySelector('#msg').textContent=d.services.length+' services, '
   +(d.total/1024).toFixed(1)+' GB RAM — updated '+new Date().toLocaleTimeString();
@@ -1274,7 +1346,7 @@ button{background:var(--barbg);color:var(--accent);border:1px solid var(--accent
 padding:.5rem 1rem;cursor:pointer;font-family:inherit}
 #err{color:var(--kill);margin-top:.8rem;text-align:center}
 __FX__</style></head><body><div>
-<h1 style="font-size:1.1rem;color:var(--accent)">ports — __HOST__</h1>
+<h1 data-host="__HOST__" style="font-size:1.1rem;color:var(--accent)">ports — __HOST__</h1>
 <form onsubmit="return go(event)"><input id=pin type=password inputmode=numeric
 maxlength=4 autofocus autocomplete=off><button>enter</button></form>
 <div id=err></div></div>
