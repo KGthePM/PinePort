@@ -1333,7 +1333,7 @@ html[data-fx=rust] button{border-radius:0;font-weight:700;letter-spacing:.1em;te
 html[data-fx=rust] button[data-p]{font-size:0;padding:.25rem .6rem;border-width:2px}
 html[data-fx=rust] button[data-p]::after{content:'SCRAP';font-size:.72rem}
 html[data-fx=rust] #stats{border:1px solid #3b2418;border-radius:0;background:rgba(0,0,0,.35);letter-spacing:.05em}
-html[data-fx=rust] #theme span{border-radius:0}
+html[data-fx=rust] :is(#theme button,#tpanel,#theme .sw){border-radius:0}
 html[data-fx=rust] .meter,html[data-fx=rust] .meter i{border-radius:0}
 html[data-fx=rust] .meter i{color:var(--accent);background:repeating-linear-gradient(90deg,currentColor 0 .3rem,transparent .3rem .4rem)}
 html[data-fx=rust] .warn i{color:var(--warn)}html[data-fx=rust] .crit i{color:var(--kill)}
@@ -1377,7 +1377,7 @@ html[data-fx=tet] .meter,html[data-fx=tet] .meter i{border-radius:0}
 html[data-fx=tet] .meter{height:.5rem;background:#000;box-shadow:inset 0 0 0 1px var(--edge)}
 html[data-fx=tet] .meter i{color:var(--accent);background:repeating-linear-gradient(90deg,currentColor 0 .375rem,transparent .375rem .5rem)}
 html[data-fx=tet] .warn i{color:var(--warn)}html[data-fx=tet] .crit i{color:var(--kill)}
-html[data-fx=tet] #theme span{border-radius:0;box-shadow:var(--bev)}
+html[data-fx=tet] :is(#theme button,#tpanel){border-radius:0}html[data-fx=tet] #tpanel button{font-size:.68rem}html[data-fx=tet] #theme .sw{border-radius:0;box-shadow:var(--bev)}
 html[data-fx=tet] th{font-size:.5rem;border-bottom:2px solid var(--edge);padding:.5rem .4rem}
 html[data-fx=tet] td{padding:.6rem .4rem;border-bottom:1px dashed rgba(255,255,255,.07)}
 html[data-fx=tet] td:first-child{overflow-wrap:break-word;position:relative;padding-left:calc(var(--s)*4 + 1rem)}html[data-fx=tet] .mem{white-space:nowrap}
@@ -1456,7 +1456,7 @@ html[data-fx=neon] #stats b{text-shadow:0 0 6px rgba(60,232,255,.6)}
 html[data-fx=neon] .meter{height:.3rem;border-radius:0;background:rgba(60,232,255,.1)}
 html[data-fx=neon] .meter i{border-radius:0;color:var(--cy);background:linear-gradient(90deg,transparent,currentColor calc(100% - 3px),#fff 0)}
 html[data-fx=neon] .warn i{color:var(--warn)}html[data-fx=neon] .crit i{color:var(--kill)}
-html[data-fx=neon] #theme span{border-radius:2px}
+html[data-fx=neon] #theme .sw{border-radius:2px}html[data-fx=neon] #theme button{border-color:transparent;--fill:rgba(13,20,56,.55)}html[data-fx=neon] #tpanel button{letter-spacing:.04em;font-size:.72rem}html[data-fx=neon] #tpanel button.sel{--ec:var(--cy);--fill:rgba(60,232,255,.12);box-shadow:none}
 html[data-fx=neon] table{border-collapse:separate;border-spacing:0 .35rem}
 html[data-fx=neon] th{font:.68rem var(--sans);letter-spacing:.25em;border:0;padding:.2rem .6rem}
 html[data-fx=neon] td{border:solid rgba(60,232,255,.22);border-width:1px 0;background:rgba(13,20,56,.55)}
@@ -1570,17 +1570,28 @@ border-radius:3px;vertical-align:middle;margin-left:.35rem;overflow:hidden}
 .meter i{display:block;height:100%;background:var(--accent);border-radius:3px}
 .warn i{background:var(--warn)}.crit i{background:var(--kill)}
 /* theme picker */
-#theme{display:flex;flex-wrap:wrap;gap:.45rem;margin:-.6rem 0 1rem}
-#theme span{width:1.15rem;height:1.15rem;border-radius:50%;cursor:pointer;
-border:2px solid transparent;display:inline-block}
-#theme span.sel{border-color:var(--fg)}
+#theme{margin:0 0 .8rem}
+#theme button{display:inline-flex;align-items:center;gap:.45rem;background:transparent;color:var(--fg);
+border:1px solid var(--line);border-radius:999px;padding:.3rem .75rem .3rem .4rem;font-size:.8rem}
+#theme button:hover{background:var(--barbg);color:var(--fg)}
+#theme .sw{width:1rem;height:1rem;border-radius:50%;flex:none}
+#tchip .car{color:var(--dim);font-size:.7em;transition:transform .2s}
+#tchip[aria-expanded=true] .car{transform:rotate(180deg)}
+#tpanel{margin-top:.5rem;padding:.7rem;border:1px solid var(--line);border-radius:8px;background:var(--bg)}
+#tpanel[hidden]{display:none}
+#tpanel h3{font-size:.68rem;font-weight:normal;letter-spacing:.15em;text-transform:uppercase;color:var(--dim);margin:.8rem 0 .4rem}
+#tpanel h3:first-child{margin-top:0}
+#tpanel .tg{display:grid;grid-template-columns:repeat(auto-fill,minmax(6.5rem,1fr));gap:.4rem}
+#tpanel button{border-radius:6px;min-height:2.3rem;width:100%;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+#tpanel button.sel{border-color:var(--accent);color:var(--accent);box-shadow:inset 0 0 0 1px var(--accent)}
 #addons-top{margin:0 0 1.2rem}#addons-top:empty{display:none}
 .card[hidden],#t[hidden]{display:none!important}
 .fold::before{content:attr(data-f) " ";font-size:.75em}
 __FX__</style></head><body>
 <h1 data-host="__HOST__" data-lines="0">PinePorts — what's running on __HOST__</h1>
+<div id=theme><button id=tchip aria-expanded=false aria-controls=tpanel><span class=sw></span><span class=tn></span><span class=car>▼</span></button>
+<div id=tpanel hidden></div></div>
 <div id=stats></div>
-<div id=theme></div>
 <div id=addons-top></div>
 <h2 style="font-size:.95rem;color:var(--accent);margin:0 0 .4rem"><span class=fold id=svc-fold style="cursor:pointer">Services</span></h2>
 <table id=t><thead><tr>
@@ -1593,7 +1604,9 @@ const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&
 const own=['cupsd','avahi-daemon','tailscaled','systemd','AdGuardHome'];
 function applyTheme(t){theme=t;try{localStorage.setItem('pp_theme',t)}catch(e){}
  paint(t);
- document.querySelectorAll('#theme span').forEach(el=>el.classList.toggle('sel',el.dataset.t===t));}
+ document.querySelectorAll('#tpanel button').forEach(el=>el.classList.toggle('sel',el.dataset.t===t));
+ document.querySelector('#tchip .sw').style.background=swatch(t);
+ document.querySelector('#tchip .tn').textContent=t;}
 function rate(b){return b>=1048576?(b/1048576).toFixed(1)+'MB/s':b>=1024?Math.round(b/1024)+'KB/s':b+'B/s'}
 function meter(pct){const cls=pct>90?'crit':pct>75?'warn':'';
  return `<span class="meter ${cls}"><i style="width:${Math.min(pct,100)}%"></i></span>`}
@@ -1645,11 +1658,21 @@ function foldable(lbl,body,key){
  let f0=false;try{f0=!!localStorage.getItem(key)}catch(e){}
  fold(f0);lbl.onclick=()=>fold(!body.hidden);}
 foldable(document.querySelector('#svc-fold'),document.querySelector('#t'),'pp_fold_services');
-/* build theme dots */
-const tdiv=document.querySelector('#theme');
-for(const t of['auto',...Object.keys(THEMES)]){const el=document.createElement('span');
- el.dataset.t=t;el.title=t==='auto'?'auto (follows OS)':t;
- el.style.background=t==='auto'?`linear-gradient(135deg,${THEMES.midnight.accent} 50%,${THEMES.paper.accent} 50%)`:THEMES[t]._dot||THEMES[t].accent;el.onclick=()=>applyTheme(t);tdiv.appendChild(el);}
+/* theme picker: a chip naming the current theme opens a panel of named,
+   grouped swatches. Tapping one applies it live and leaves the panel open
+   so themes can be flipped through; the chip, a tap outside or Esc closes it.
+   Themes with an _fx skin group themselves under Skins. */
+function swatch(t){return t==='auto'?`linear-gradient(135deg,${THEMES.midnight.accent} 50%,${THEMES.paper.accent} 50%)`:THEMES[t]._dot||THEMES[t].accent}
+const GLOW=['phosphor','amber'],names=Object.keys(THEMES),tchip=document.querySelector('#tchip'),tpanel=document.querySelector('#tpanel');
+tpanel.innerHTML=[['Colors',['auto',...names.filter(t=>!GLOW.includes(t)&&!THEMES[t]._fx)]],
+ ['Glow',names.filter(t=>GLOW.includes(t))],['Skins ✦',names.filter(t=>THEMES[t]._fx)]]
+ .filter(([,ts])=>ts.length).map(([g,ts])=>`<h3>${g}</h3><div class=tg>`+ts.map(t=>
+  `<button data-t="${t}" title="${t==='auto'?'follows your OS light/dark setting':t}"><span class=sw style="background:${swatch(t)}"></span>${t}</button>`).join('')+'</div>').join('');
+tpanel.querySelectorAll('button').forEach(el=>el.onclick=()=>applyTheme(el.dataset.t));
+function openPicker(o){tpanel.hidden=!o;tchip.setAttribute('aria-expanded',o)}
+tchip.onclick=()=>openPicker(tpanel.hidden);
+document.addEventListener('click',e=>{if(!tpanel.hidden&&!e.target.closest('#theme'))openPicker(false)});
+document.addEventListener('keydown',e=>{if(e.key==='Escape')openPicker(false)});
 applyTheme(theme);
 /* add-ons — each registered one gets a card; built generically */
 function fmtLeft(s){if(s==null)return'';const h=Math.floor(s/3600),m=Math.floor(s%3600/60);
