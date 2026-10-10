@@ -223,7 +223,7 @@ class WinStats(unittest.TestCase):
             ps.boot_time.return_value = 0
             st = pp.win_sys_stats()
         for k in ("ram_pct", "ram_used", "ram_total", "cpu_pct", "disk_pct",
-                  "disk_free", "uptime", "load1"):
+                  "disk_free", "uptime", "load1", "net_down", "net_up", "conns"):
             self.assertIn(k, st)
         self.assertEqual(st["ram_pct"], 55.5)
         self.assertEqual(st["disk_pct"], 70.2)
@@ -233,6 +233,7 @@ class WinStats(unittest.TestCase):
         with mock.patch.object(pp, "_psutil", None):
             st = pp.win_sys_stats()
         self.assertEqual(st["uptime"], "-")
+        self.assertEqual(st["conns"], 0)
         self.assertEqual(st["load1"], 0.0)
 
 
@@ -292,6 +293,47 @@ class PlatformConfig(unittest.TestCase):
             with open(pp.PIN_FILE) as f:
                 saved = f.read().strip()
         self.assertEqual(saved, hashlib.sha256(b"1234").hexdigest())
+
+
+class NetStats(unittest.TestCase):
+    def test_rate_from_delta(self):
+        with mock.patch.object(pp, "_last_net", None), \
+             mock.patch.object(pp.time, "monotonic", side_effect=[100.0, 102.0]):
+            self.assertEqual(pp.net_rate("eth0", 1000, 500), (0, 0))  # first call
+            self.assertEqual(pp.net_rate("eth0", 5000, 2500), (2000, 1000))
+
+    def test_rate_resets_on_iface_change_and_counter_wrap(self):
+        with mock.patch.object(pp, "_last_net", None), \
+             mock.patch.object(pp.time, "monotonic", side_effect=[1.0, 2.0, 3.0]):
+            pp.net_rate("eth0", 10**9, 10**9)
+            self.assertEqual(pp.net_rate("wlan0", 10, 10), (0, 0))
+            self.assertEqual(pp.net_rate("wlan0", 5, 5), (0, 0))  # never negative
+
+    def test_hex_loopback(self):
+        self.assertTrue(pp._hex_loopback("0100007F"))           # 127.0.0.1
+        self.assertFalse(pp._hex_loopback("DA0A010A"))          # 10.1.10.218
+        self.assertTrue(pp._hex_loopback("00000000000000000000000001000000"))  # ::1
+        self.assertTrue(pp._hex_loopback("0000000000000000FFFF00000100007F"))  # ::ffff:127.0.0.1
+        self.assertFalse(pp._hex_loopback("0000000000000000FFFF0000DA0A010A"))
+
+    def test_win_net_skips_virtual_adapters(self):
+        C = lambda r, t: mock.MagicMock(bytes_recv=r, bytes_sent=t)
+        nics = {"Ethernet": C(100, 50), "Loopback Pseudo-Interface 1": C(9, 9),
+                "vEthernet (WSL)": C(9, 9), "Tailscale": C(9, 9)}
+        with mock.patch.object(pp, "_psutil") as ps, \
+             mock.patch.object(pp, "net_rate", side_effect=lambda k, r, t: (r, t)):
+            ps.net_io_counters.return_value = nics
+            self.assertEqual(pp.win_net(), (100, 50))
+
+    def test_win_conns_counts_established_remote(self):
+        A = lambda ip: mock.MagicMock(ip=ip)
+        conns = [mock.MagicMock(status="ESTABLISHED", raddr=A("8.8.8.8")),
+                 mock.MagicMock(status="ESTABLISHED", raddr=A("127.0.0.1")),
+                 mock.MagicMock(status="LISTEN", raddr=()),
+                 mock.MagicMock(status="TIME_WAIT", raddr=A("1.1.1.1"))]
+        with mock.patch.object(pp, "_psutil") as ps:
+            ps.net_connections.return_value = conns
+            self.assertEqual(pp.win_conns(), 1)
 
 
 if __name__ == "__main__":

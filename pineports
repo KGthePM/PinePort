@@ -160,11 +160,39 @@ def win_cpu_pct():
     _last_win_cpu = (time.time(), idle, total)
     return round(pct, 1)
 
+# Same idea as default_iface() on Linux: skip adapters that carry traffic
+# already counted on the physical NIC (loopback, Hyper-V/WSL/Docker
+# switches, the Tailscale tunnel).
+_WIN_SKIP_NICS = ("loopback", "vethernet", "tailscale")
+
+def win_net():
+    """(down, up) bytes/s summed over physical-ish adapters."""
+    try:
+        nics = _psutil.net_io_counters(pernic=True)
+    except Exception:
+        return 0, 0
+    rx = tx = 0
+    for name, c in nics.items():
+        if not any(k in name.lower() for k in _WIN_SKIP_NICS):
+            rx += c.bytes_recv
+            tx += c.bytes_sent
+    return net_rate("win", rx, tx)
+
+def win_conns():
+    """Established TCP connections, loopback-to-loopback excluded."""
+    try:
+        conns = _psutil.net_connections(kind="tcp")
+    except Exception:
+        return 0
+    return sum(1 for c in conns if c.status == "ESTABLISHED" and c.raddr
+               and not _is_loopback(c.raddr.ip))
+
 def win_sys_stats():
     if not _psutil:
         return {"ram_pct": 0.0, "ram_used": 0.0, "ram_total": 0.0,
                 "cpu_pct": 0.0, "disk_pct": 0.0, "disk_free": 0.0,
-                "uptime": "-", "load1": 0.0}
+                "uptime": "-", "load1": 0.0,
+                "net_down": 0, "net_up": 0, "conns": 0}
     vm = _psutil.virtual_memory()
     drive = os.path.splitdrive(os.path.expanduser("~"))[0] + os.sep or "C:" + os.sep
     du = _psutil.disk_usage(drive)
@@ -172,6 +200,7 @@ def win_sys_stats():
     d, rem = divmod(up, 86400)
     h, m = divmod(rem, 3600)
     m //= 60
+    net = win_net()
     return {
         "ram_pct": round(vm.percent, 1),
         "ram_used": round(vm.used / 1048576, 1),
@@ -181,6 +210,7 @@ def win_sys_stats():
         "disk_free": round(du.free / 2**30, 0),
         "uptime": f"{d}d {h}h {m}m" if d else f"{h}h {m}m",
         "load1": 0.0,  # no loadavg on Windows
+        "net_down": net[0], "net_up": net[1], "conns": win_conns(),
     }
 
 def win_gather():
@@ -493,6 +523,75 @@ def cpu_pct():
     _last_stat = (now, idle, total)
     return round(pct, 1)
 
+_last_net = None  # (t, key, rx, tx) for throughput delta between polls
+
+def net_rate(key, rx, tx):
+    """(down, up) bytes/s since the last call. key names what the counters
+    came from; if it changes (new default route) the delta is meaningless."""
+    global _last_net
+    now = time.monotonic()
+    down = up = 0.0
+    if _last_net and _last_net[1] == key and now > _last_net[0]:
+        dt = now - _last_net[0]
+        down = max(0.0, (rx - _last_net[2]) / dt)
+        up = max(0.0, (tx - _last_net[3]) / dt)
+    _last_net = (now, key, rx, tx)
+    return round(down), round(up)
+
+def default_iface():
+    """Interface of the lowest-metric IPv4 default route, or None. Only this
+    one is counted: lo/docker0/tailscale0 would double-count the same bytes."""
+    best = None
+    try:
+        with open("/proc/net/route") as f:
+            next(f)
+            for line in f:
+                p = line.split()
+                if len(p) > 6 and p[1] == "00000000" and int(p[3], 16) & 1:  # RTF_UP
+                    if best is None or int(p[6]) < best[1]:
+                        best = (p[0], int(p[6]))
+    except (OSError, ValueError, StopIteration):
+        return None
+    return best and best[0]
+
+def linux_net():
+    """(down, up) bytes/s on the default-route interface."""
+    iface = default_iface()
+    rx = tx = 0
+    try:
+        with open("/proc/net/dev") as f:
+            for line in f:
+                name, _, rest = line.partition(":")
+                if name.strip() == iface:
+                    v = rest.split()
+                    rx, tx = int(v[0]), int(v[8])
+    except (OSError, ValueError, IndexError):
+        pass
+    return net_rate(iface, rx, tx)
+
+def _hex_loopback(addr):
+    """True if a /proc/net/tcp{,6} hex address (no port) is loopback."""
+    if len(addr) == 8:  # little-endian IPv4: 127.x.x.x ends in 7F
+        return addr.endswith("7F")
+    return (addr == "00000000000000000000000001000000"  # ::1
+            or (addr.startswith("0000000000000000FFFF0000") and addr.endswith("7F")))
+
+def linux_conns():
+    """Established TCP connections, not counting loopback-to-loopback ones
+    (local services talking to each other would show up twice)."""
+    n = 0
+    for path in ("/proc/net/tcp", "/proc/net/tcp6"):
+        try:
+            with open(path) as f:
+                next(f)
+                for line in f:
+                    p = line.split()
+                    if len(p) > 3 and p[3] == "01" and not _hex_loopback(p[2].split(":")[0]):
+                        n += 1
+        except (OSError, StopIteration):
+            pass
+    return n
+
 def linux_sys_stats():
     mi = {}
     with open("/proc/meminfo") as f:
@@ -507,6 +606,7 @@ def linux_sys_stats():
     d, rem = divmod(up, 86400)
     h, m = divmod(rem, 3600)
     m //= 60
+    net = linux_net()
     return {
         "ram_pct": round(100.0 * used / total, 1),
         "ram_used": round(used / 1048576, 1), "ram_total": round(total / 1048576, 1),
@@ -514,6 +614,7 @@ def linux_sys_stats():
         "disk_free": round(st.f_bavail * st.f_frsize / 2**30, 0),
         "uptime": f"{d}d {h}h {m}m" if d else f"{h}h {m}m",
         "load1": round(os.getloadavg()[0], 2),
+        "net_down": net[0], "net_up": net[1], "conns": linux_conns(),
     }
 
 sys_stats = win_sys_stats if IS_WIN else linux_sys_stats
@@ -1488,6 +1589,7 @@ const own=['cupsd','avahi-daemon','tailscaled','systemd','AdGuardHome'];
 function applyTheme(t){theme=t;try{localStorage.setItem('pp_theme',t)}catch(e){}
  paint(t);
  document.querySelectorAll('#theme span').forEach(el=>el.classList.toggle('sel',el.dataset.t===t));}
+function rate(b){return b>=1048576?(b/1048576).toFixed(1)+'MB/s':b>=1024?Math.round(b/1024)+'KB/s':b+'B/s'}
 function meter(pct){const cls=pct>90?'crit':pct>75?'warn':'';
  return `<span class="meter ${cls}"><i style="width:${Math.min(pct,100)}%"></i></span>`}
 let cells={};  /* last {text, html} per pid+column, so the flap skin flips only what changed */
@@ -1501,7 +1603,9 @@ async function refresh(){
   `<span>RAM <b>${st.ram_used}/${st.ram_total}G</b> <b>${st.ram_pct}%</b>${meter(st.ram_pct)}</span>`+
   `<span>DISK <b>${st.disk_pct}%</b>${meter(st.disk_pct)}</span>`+
   `<span>free <b>${st.disk_free}G</b></span>`+
-  `<span>load <b>${st.load1}</b></span><span>up <b>${st.uptime}</b></span>`;
+  `<span>load <b>${st.load1}</b></span><span>up <b>${st.uptime}</b></span>`+
+  `<span>NET in <b>${rate(st.net_down)}</b> out <b>${rate(st.net_up)}</b></span>`+
+  `<span>conns <b>${st.conns}</b></span>`;
  const tb=document.querySelector('#t tbody'),was=cells,fx=h.dataset.fx;
  /* tetromino: remember each row's pid and height so a vanished one can clear */
  const old=fx==='tet'?[...tb.rows].map(r=>[r.dataset.pid,r.offsetHeight]):[];
