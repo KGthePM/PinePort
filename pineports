@@ -19,6 +19,7 @@ except ImportError:
 # Windows keeps the same filenames under %APPDATA%\pineports\; Linux keeps
 # ~/.config/ as before. One base dir, computed once.
 IS_WIN = sys.platform == "win32"
+VERSION = "0.5.1"
 
 def CONFIG_PATH(fname):
     base = (os.path.join(os.environ.get("APPDATA", os.path.expanduser("~")),
@@ -1678,6 +1679,7 @@ border:1px solid var(--line);border-radius:999px;padding:.3rem .75rem .3rem .4re
 #tpanel button{border-radius:6px;min-height:2.3rem;width:100%;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
 #tpanel button.sel{border-color:var(--accent);color:var(--accent);box-shadow:inset 0 0 0 1px var(--accent)}
 #addons-top{margin:0 0 1.2rem}#addons-top:empty{display:none}
+#version{margin:1.6rem 0 .5rem;text-align:center;color:var(--dim);font-size:.75rem}
 .card[hidden],#t[hidden]{display:none!important}
 .fold::before{content:attr(data-f) " ";font-size:.75em}
 __FX__</style></head><body>
@@ -1691,6 +1693,7 @@ __FX__</style></head><body>
 <th>SERVICE</th><th class=mem>MEM</th><th>PORTS</th><th></th></tr></thead>
 <tbody></tbody></table><div id=msg></div>
 <div id=addons></div>
+<footer id=version>Version: __VERSION__</footer>
 <script>
 const ADDONS=__ADDONS__;
 const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]);
@@ -1831,7 +1834,7 @@ refresh();setInterval(()=>{if(!document.hidden)refresh()},5000);
 document.addEventListener('visibilitychange',()=>{if(!document.hidden)refresh()});
 </script></body></html>"""
 
-PAGE = PAGE_TMPL.replace("__ICON__", ICON_HEAD).replace("__HOST__", HOST).replace("__THEMES__", THEMES_JS).replace("__FX__", FX_CSS)
+PAGE = PAGE_TMPL.replace("__ICON__", ICON_HEAD).replace("__HOST__", HOST).replace("__THEMES__", THEMES_JS).replace("__FX__", FX_CSS).replace("__VERSION__", VERSION)
 
 LOGIN_TMPL = """<!DOCTYPE html><html><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">

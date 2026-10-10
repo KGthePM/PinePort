@@ -20,6 +20,15 @@ pp = importlib.util.module_from_spec(spec)
 loader.exec_module(pp)
 
 
+class Versioning(unittest.TestCase):
+    def test_version_matches_file_and_dashboard(self):
+        with open(os.path.join(HERE, "VERSION"), encoding="utf-8") as f:
+            version = f.read().strip()
+        self.assertEqual(pp.VERSION, version)
+        self.assertIn(f"Version: {version}", pp.PAGE)
+        self.assertNotIn("__VERSION__", pp.PAGE)
+
+
 class WinListeners(unittest.TestCase):
     def test_parses_listener_rows(self):
         rows = [
