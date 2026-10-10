@@ -1106,9 +1106,11 @@ ICON_HEAD = """<link rel="icon" type="image/png" href="/icon.png">
 # Effect skins, turned on by a theme's _fx key (html[data-fx=...]). CSS only, so
 # nothing runs between polls; animations play only when the skin appears or a
 # poll redraws the rows.
+# A skin that paints <html> with a gradient also needs a solid background-color:
+# iOS Safari fills the status bar and landscape notch insets with that color only.
 # Retro CRT matches Needle's desklet theme: beige bezel, green phosphor screen,
 # square block gauges, and a badge + power LED that blinks on each refresh.
-FX_CSS = """html[data-fx=crt]{background:linear-gradient(#d8d0b8,#b9b096);padding:.8rem .8rem 0}
+FX_CSS = """html[data-fx=crt]{background:#d8d0b8 linear-gradient(#d8d0b8,#b9b096);padding:.8rem .8rem 0}
 html[data-fx=crt] body{position:relative;box-sizing:border-box;min-height:calc(100vh - 4rem);
 margin:0 auto 3.2rem;padding:1rem 1.1rem;background:linear-gradient(#0b1a0f,#050c07);
 border:3px solid #2e2b24;border-radius:14px;box-shadow:inset 0 0 3rem rgba(0,0,0,.75),0 0 0 2px #8a8270;
@@ -1193,7 +1195,7 @@ html[data-fx=flap] body:has(#pin) button::after{content:'BOARD';font-size:.9rem;
    SIGNAL, kill reads SCRAP. Noise is one tiny SVG tile, rasterised once. */
 html[data-fx=rust]{--noise:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.75' numOctaves='3'/%3E%3CfeColorMatrix values='0 0 0 0 .1 0 0 0 0 .04 0 0 0 0 .02 1.3 0 0 0 -.5'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
 --hazard:repeating-linear-gradient(-45deg,#d9a21b 0 .45rem,#151010 .45rem .9rem);--rivet:#9a6a52 0 .2rem,#2a1712 .26rem,transparent .3rem;
-background:radial-gradient(ellipse at 50% 30%,#1f1410,#070403 75%);min-height:100%}
+background:#070403 radial-gradient(ellipse at 50% 30%,#1f1410,#070403 75%);min-height:100%}
 html[data-fx=rust]::before{content:'';position:fixed;inset:-220px 0 0 -220px;pointer-events:none;z-index:9;opacity:.3;
 background-image:radial-gradient(circle at 20% 30%,#cbbba2 0 1px,transparent 1.6px),radial-gradient(circle at 72% 58%,#cbbba2 0 1px,transparent 1.6px),
 radial-gradient(circle at 45% 88%,#8a7a66 0 1.3px,transparent 1.9px);background-size:220px 220px;animation:ash 60s linear infinite}
