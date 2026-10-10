@@ -644,12 +644,18 @@ dracula:{bg:'#282a36',fg:'#f8f8f2',dim:'#8b93b8',line:'#44475a',accent:'#ff79c6'
 solarized:{bg:'#fdf6e3',fg:'#586e75',dim:'#839496',line:'#e4ddc8',accent:'#268bd2',kill:'#dc322f',killbg:'#f5dcd2',barbg:'#eee8d5',warn:'#b58900',warnbg:'#f3e7c0'},
 phosphor:{bg:'#050a05',fg:'#33ff66',dim:'#1f9940',line:'#123318',accent:'#66ff99',kill:'#ff5555',killbg:'#2a1010',barbg:'#0f2412',warn:'#ccff33',warnbg:'#2a3310'},
 amber:{bg:'#0a0700',fg:'#ffb000',dim:'#a87400',line:'#3a2a00',accent:'#ffcc4d',kill:'#ff5f3f',killbg:'#2e1408',barbg:'#2a1e00',warn:'#fff1c2',warnbg:'#3d3000'},
-contrast:{bg:'#000',fg:'#fff',dim:'#ccc',line:'#666',accent:'#ff0',kill:'#ff4040',killbg:'#300',barbg:'#333',warn:'#f90',warnbg:'#3a2400'}};
+contrast:{bg:'#000',fg:'#fff',dim:'#ccc',line:'#666',accent:'#ff0',kill:'#ff4040',killbg:'#300',barbg:'#333',warn:'#f90',warnbg:'#3a2400'},
+retro:{bg:'#0b1a0f',fg:'#39ff6a',dim:'#1f9e45',line:'#14361e',accent:'#66ff99',kill:'#ff5555',killbg:'#2a1010',barbg:'#0f2412',warn:'#ccff33',warnbg:'#2a3310',
+ _fx:'crt',_bar:'#d8d0b8',_dot:'radial-gradient(#39ff6a 38%,#d8d0b8 44%)'}};
+/* _keys aren't colors: _fx turns on an effect skin (FX_CSS), _bar tints the
+   phone's browser bar instead of bg, _dot styles the picker swatch */
 /* auto follows the OS light/dark setting */
 const LIGHT=matchMedia('(prefers-color-scheme: light)');
 function paint(t){if(t==='auto')t=LIGHT.matches?'paper':'midnight';
- const s=document.documentElement.style;
- for(const[k,v]of Object.entries(THEMES[t]||THEMES.midnight))s.setProperty('--'+k,v);}
+ const th=THEMES[t]||THEMES.midnight,h=document.documentElement,s=h.style;
+ for(const[k,v]of Object.entries(th))if(k[0]!=='_')s.setProperty('--'+k,v);
+ if(th._fx)h.dataset.fx=th._fx;else delete h.dataset.fx;
+ const m=document.querySelector('meta[name=theme-color]');if(m)m.content=th._bar||th.bg;}
 let theme='midnight';try{theme=localStorage.getItem('pp_theme')||'midnight'}catch(e){}
 if(theme!=='auto'&&!THEMES[theme])theme='midnight';
 paint(theme);LIGHT.addEventListener('change',()=>{if(theme==='auto')paint('auto')});"""
@@ -1090,7 +1096,31 @@ ICON_PATHS = ("/apple-touch-icon.png", "/apple-touch-icon-precomposed.png",
 
 ICON_HEAD = """<link rel="icon" type="image/png" href="/icon.png">
 <link rel="apple-touch-icon" href="/apple-touch-icon.png">
-<meta name="apple-mobile-web-app-title" content="PinePorts">"""
+<meta name="apple-mobile-web-app-title" content="PinePorts">
+<meta name="theme-color" content="#111">"""
+
+# Effect skins, turned on by a theme's _fx key (html[data-fx=...]). CSS only, so
+# nothing runs between polls; the one animation plays once when the skin appears.
+# Retro CRT matches Needle's desklet theme: beige bezel, green phosphor screen,
+# square block gauges, and a badge + power LED that blinks on each refresh.
+FX_CSS = """html[data-fx=crt]{background:linear-gradient(#d8d0b8,#b9b096);padding:.8rem .8rem 0}
+html[data-fx=crt] body{position:relative;box-sizing:border-box;min-height:calc(100vh - 4rem);
+margin:0 auto 3.2rem;padding:1rem 1.1rem;background:linear-gradient(#0b1a0f,#050c07);
+border:3px solid #2e2b24;border-radius:14px;box-shadow:inset 0 0 3rem rgba(0,0,0,.75),0 0 0 2px #8a8270;
+text-shadow:0 0 4px rgba(57,255,106,.55);animation:crt-on .6s ease-out}
+html[data-fx=crt] body::after{content:'';position:absolute;inset:0;border-radius:11px;pointer-events:none;
+z-index:1;background:repeating-linear-gradient(transparent 0 2px,rgba(0,0,0,.2) 2px 3px)}
+html[data-fx=crt] body::before{content:'PINEPORTS';position:absolute;left:.4rem;right:.4rem;bottom:-2.2rem;
+color:#5b5444;font-size:.7rem;letter-spacing:.3em;text-shadow:none;line-height:1rem;
+background:radial-gradient(circle at calc(100% - .4rem) 50%,#2f8f45 .22rem,transparent .28rem)}
+html[data-fx=crt].io body::before{background:radial-gradient(circle at calc(100% - .4rem) 50%,#7dff9e .22rem,rgba(57,255,106,.35) .32rem,transparent .5rem)}
+html[data-fx=crt] button,html[data-fx=crt] input{position:relative;z-index:2;border-radius:0;text-shadow:none}
+html[data-fx=crt] .badge,html[data-fx=crt] #stats,html[data-fx=crt] .meter,html[data-fx=crt] .meter i{border-radius:0}
+html[data-fx=crt] .meter i{color:var(--accent);background:repeating-linear-gradient(90deg,currentColor 0 .3rem,transparent .3rem .4rem)}
+html[data-fx=crt] .warn i{color:var(--warn)}html[data-fx=crt] .crit i{color:var(--kill)}
+@keyframes crt-on{0%{transform:scale(.6,.004);filter:brightness(3)}35%{transform:scale(1,.004)}
+70%{transform:none;filter:brightness(1.6)}100%{transform:none;filter:none}}
+@media (prefers-reduced-motion:reduce){html[data-fx] body{animation:none}}"""
 
 PAGE_TMPL = """<!DOCTYPE html><html><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
@@ -1123,7 +1153,7 @@ border-radius:3px;vertical-align:middle;margin-left:.35rem;overflow:hidden}
 #theme span{width:1.15rem;height:1.15rem;border-radius:50%;cursor:pointer;
 border:2px solid transparent;display:inline-block}
 #theme span.sel{border-color:var(--fg)}
-</style></head><body>
+__FX__</style></head><body>
 <h1>PinePorts — what's running on __HOST__</h1>
 <div id=stats></div>
 <div id=theme></div>
@@ -1141,6 +1171,7 @@ function applyTheme(t){theme=t;try{localStorage.setItem('pp_theme',t)}catch(e){}
 function meter(pct){const cls=pct>90?'crit':pct>75?'warn':'';
  return `<span class="meter ${cls}"><i style="width:${Math.min(pct,100)}%"></i></span>`}
 async function refresh(){
+ const h=document.documentElement;h.classList.add('io');setTimeout(()=>h.classList.remove('io'),200);
  const r=await fetch('/api/services');const d=await r.json();
  const st=d.stats;
  document.querySelector('#stats').innerHTML=
@@ -1166,7 +1197,7 @@ async function refresh(){
 const tdiv=document.querySelector('#theme');
 for(const t of['auto',...Object.keys(THEMES)]){const el=document.createElement('span');
  el.dataset.t=t;el.title=t==='auto'?'auto (follows OS)':t;
- el.style.background=t==='auto'?`linear-gradient(135deg,${THEMES.midnight.accent} 50%,${THEMES.paper.accent} 50%)`:THEMES[t].accent;el.onclick=()=>applyTheme(t);tdiv.appendChild(el);}
+ el.style.background=t==='auto'?`linear-gradient(135deg,${THEMES.midnight.accent} 50%,${THEMES.paper.accent} 50%)`:THEMES[t]._dot||THEMES[t].accent;el.onclick=()=>applyTheme(t);tdiv.appendChild(el);}
 applyTheme(theme);
 /* add-ons — each registered one gets a card; built generically */
 function fmtLeft(s){if(s==null)return'';const h=Math.floor(s/3600),m=Math.floor(s%3600/60);
@@ -1227,7 +1258,7 @@ refresh();setInterval(()=>{if(!document.hidden)refresh()},5000);
 document.addEventListener('visibilitychange',()=>{if(!document.hidden)refresh()});
 </script></body></html>"""
 
-PAGE = PAGE_TMPL.replace("__ICON__", ICON_HEAD).replace("__HOST__", HOST).replace("__THEMES__", THEMES_JS)
+PAGE = PAGE_TMPL.replace("__ICON__", ICON_HEAD).replace("__HOST__", HOST).replace("__THEMES__", THEMES_JS).replace("__FX__", FX_CSS)
 
 LOGIN_TMPL = """<!DOCTYPE html><html><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
@@ -1242,7 +1273,7 @@ letter-spacing:.3em;font-family:inherit}
 button{background:var(--barbg);color:var(--accent);border:1px solid var(--accent);border-radius:4px;
 padding:.5rem 1rem;cursor:pointer;font-family:inherit}
 #err{color:var(--kill);margin-top:.8rem;text-align:center}
-</style></head><body><div>
+__FX__</style></head><body><div>
 <h1 style="font-size:1.1rem;color:var(--accent)">ports — __HOST__</h1>
 <form onsubmit="return go(event)"><input id=pin type=password inputmode=numeric
 maxlength=4 autofocus autocomplete=off><button>enter</button></form>
@@ -1253,7 +1284,7 @@ async function go(e){e.preventDefault();
  if(r.ok){location.reload()}else{document.getElementById('err').textContent=await r.text()}}
 </script></body></html>"""
 
-LOGIN_PAGE = LOGIN_TMPL.replace("__ICON__", ICON_HEAD).replace("__HOST__", HOST).replace("__THEMES__", THEMES_JS)
+LOGIN_PAGE = LOGIN_TMPL.replace("__ICON__", ICON_HEAD).replace("__HOST__", HOST).replace("__THEMES__", THEMES_JS).replace("__FX__", FX_CSS)
 
 class Handler(BaseHTTPRequestHandler):
     def _send(self, code, body, ctype="text/html; charset=utf-8"):
