@@ -19,7 +19,7 @@ except ImportError:
 # Windows keeps the same filenames under %APPDATA%\pineports\; Linux keeps
 # ~/.config/ as before. One base dir, computed once.
 IS_WIN = sys.platform == "win32"
-VERSION = "0.5.1"
+VERSION = "0.6.0"
 
 def CONFIG_PATH(fname):
     base = (os.path.join(os.environ.get("APPDATA", os.path.expanduser("~")),
@@ -758,7 +758,9 @@ tetromino:{bg:'#0a0c24',fg:'#e8ecff',dim:'#8a90c0',line:'#1e2352',accent:'#31c7e
 grid:{bg:'#05061a',fg:'#dff6ff',dim:'#7f8fc4',line:'#1b2a5c',accent:'#3ce8ff',kill:'#ff7a1a',killbg:'#2a1206',barbg:'#0d1438',warn:'#ffd23f',warnbg:'#2e2a10',
  _fx:'neon',_bar:'#05061a',_dot:'linear-gradient(#05061a 48%,#e1beff 48% 54%,#3ce8ff 54% 60%,#0d1438 60%)'},
 saucer:{bg:'#0c0716',fg:'#ecf6e4',dim:'#9a8fb5',line:'#2b2145',accent:'#8dff5a',kill:'#ff5c9a',killbg:'#3a0f26',barbg:'#1c1433',warn:'#ffd447',warnbg:'#3a3212',
- _fx:'ufo',_bar:'#0c0716',_dot:'radial-gradient(50% 18% at 50% 60%,#c9c3d9 92%,transparent),radial-gradient(circle at 50% 50%,#8dff5a 0 22%,#0c0716 27%)'}};
+ _fx:'ufo',_bar:'#0c0716',_dot:'radial-gradient(50% 18% at 50% 60%,#c9c3d9 92%,transparent),radial-gradient(circle at 50% 50%,#8dff5a 0 22%,#0c0716 27%)'},
+molten:{bg:'#1a0814',fg:'#f6e3d6',dim:'#a98a9c',line:'#3d1a30',accent:'#ff8a3d',kill:'#ff3f8e',killbg:'#3a0c22',barbg:'#2a0f20',warn:'#ffd25a',warnbg:'#3a2a10',
+ _fx:'wax',_bar:'#1a0814',_dot:'radial-gradient(circle at 34% 68%,#ff8a3d 0 27%,transparent 30%),radial-gradient(circle at 66% 32%,#ff3f8e 0 20%,transparent 23%),#2a0f20'}};
 /* _keys aren't colors: _fx turns on an effect skin (FX_CSS), _bar tints the
    phone's browser bar instead of bg, _dot styles the picker swatch */
 /* auto follows the OS light/dark setting */
@@ -1331,7 +1333,7 @@ html[data-fx=rust].io tbody{animation:flicker .2s linear}
 html[data-fx=rust] a{text-decoration:none;border-bottom:1px dotted}
 html[data-fx=rust] .badge{font-size:0;background:none;padding:0;border-radius:0}
 html[data-fx=rust] .badge::after{content:'\\2622\\FE0E SIGNAL';font-size:.68rem;font-weight:700;letter-spacing:.1em;color:#9cff3a;margin-left:.4em;
-text-shadow:0 0 6px rgba(156,255,58,.7);animation:pulse 2.4s ease-in-out infinite}
+text-shadow:0 0 6px rgba(156,255,58,.7);animation:pulse 2.4s ease-in-out var(--ph,0s) infinite}
 html[data-fx=rust] button{border-radius:0;font-weight:700;letter-spacing:.1em;text-transform:uppercase}
 html[data-fx=rust] button[data-p]{font-size:0;padding:.25rem .6rem;border-width:2px}
 html[data-fx=rust] button[data-p]::after{content:'SCRAP';font-size:.72rem}
@@ -1471,7 +1473,7 @@ html[data-fx=neon] a{text-decoration:none;text-shadow:0 0 6px rgba(60,232,255,.4
 html[data-fx=neon] .badge{font-size:0;padding:0 0 0 .7rem;margin-left:.2rem;border-radius:0;vertical-align:.08rem;
 background:linear-gradient(90deg,transparent,var(--vi)) 0 50%/.7rem 2px no-repeat}
 html[data-fx=neon] .badge::after{content:'NEW';display:inline-block;font:600 .58rem/1 var(--sans);letter-spacing:.15em;padding:.2rem .3rem .2rem .4rem;
-color:#f1e4ff;background:rgba(178,107,255,.28);box-shadow:inset 0 0 0 1px var(--vi);text-shadow:0 0 6px var(--vi);animation:pulse 2.4s ease-in-out infinite}
+color:#f1e4ff;background:rgba(178,107,255,.28);box-shadow:inset 0 0 0 1px var(--vi);text-shadow:0 0 6px var(--vi);animation:pulse 2.4s ease-in-out var(--ph,0s) infinite}
 html[data-fx=neon] :is(button,#stats,.card){--ec:rgba(60,232,255,.3);background:
 linear-gradient(135deg,transparent calc(.283rem - 1px),var(--ec) 0 .283rem,transparent 0),
 linear-gradient(315deg,transparent calc(.283rem - 1px),var(--ec) 0 .283rem,transparent 0),var(--fill,transparent)}
@@ -1546,7 +1548,7 @@ html[data-fx=ufo] a{text-decoration:none;border-bottom:1px dotted rgba(141,255,9
 html[data-fx=ufo] tr.drop td{animation:ufo-in .7s ease-out calc(min(var(--r),12)*60ms) both}
 html[data-fx=ufo] .badge{font-size:0;padding:0;margin-left:.3rem;background:none;vertical-align:.05rem;white-space:nowrap}
 html[data-fx=ufo] .badge::before{content:'';display:inline-block;width:.38rem;height:.38rem;border-radius:50%;vertical-align:.05rem;
-background:var(--warn);animation:ping 2s ease-out infinite}
+background:var(--warn);animation:ping 2s ease-out var(--ph,0s) infinite}
 html[data-fx=ufo] .badge::after{content:'NEW';margin-left:.22rem;font:700 .56rem/1 var(--rnd);letter-spacing:.1em;color:var(--warn)}
 html[data-fx=ufo] button{font-family:var(--rnd);border-radius:999px;-webkit-tap-highlight-color:transparent}
 html[data-fx=ufo] button[data-p]{font-size:0;padding:.3rem .7rem;white-space:nowrap;background:rgba(255,92,154,.1)}
@@ -1576,6 +1578,95 @@ html[data-fx=ufo] h1{margin-top:2.4rem}html[data-fx=ufo] h1::before{font-size:1.
 html[data-fx=ufo] table{font-size:.8rem;padding:.1rem}html[data-fx=ufo] td{padding:.5rem .35rem}html[data-fx=ufo] th{padding:.45rem .35rem;letter-spacing:.12em}
 html[data-fx=ufo] .badge{margin-left:.2rem}html[data-fx=ufo] .badge::after{display:none}
 html[data-fx=ufo] button[data-p]{padding:.3rem .5rem}html[data-fx=ufo] button[data-p]::after{content:'BEAM';font-size:.62rem}}
+/* Molten: a 70s wax lamp. Aubergine glass lit from below; two wax blobs
+   rise and sink behind the page on html::before/::after (transform only),
+   and refresh() sets --heat from CPU % so they swell and brighten under
+   load. Meters are wax: refresh() starts each new meter at the last poll's
+   width so it oozes to the new %, and its bulb tip sheds a drop. New pids
+   warm in (.drop); a vanished pid's .clr row is engulfed in wax that melts
+   and drips away. MELTED counts them. Kill reads MELT. Rounded system fonts only. */
+html[data-fx=wax]{--or:#ff8a3d;--glass:rgba(34,10,28,.82);--edge:rgba(255,138,61,.22);--heat:.2;
+--rnd:ui-rounded,"SF Pro Rounded","Arial Rounded MT Bold","Varela Round",system-ui,-apple-system,"Segoe UI",sans-serif;
+background-color:#1a0814;min-height:100%;background-image:
+radial-gradient(120% 40% at 50% 100%,rgba(255,110,40,.26),transparent 70%),linear-gradient(#1a0814,#260a1d 55%,#33101c)}
+html[data-fx=wax]::before,html[data-fx=wax]::after{content:'';position:fixed;bottom:0;z-index:-1;pointer-events:none;
+aspect-ratio:1/1.15;border-radius:48% 52% 44% 56%/56% 46% 54% 44%;opacity:calc(.3 + var(--heat)*.45);transition:width 4s,opacity 4s}
+html[data-fx=wax]::before{left:4%;width:calc(8rem + var(--heat)*8rem);background:radial-gradient(circle at 38% 32%,#ffc07a,#ff8a3d 45%,#e8336f);
+box-shadow:0 0 40px rgba(255,138,61,.35);animation:wax-rise 38s ease-in-out -6s infinite}
+html[data-fx=wax]::after{right:3%;width:calc(5.5rem + var(--heat)*6rem);background:radial-gradient(circle at 40% 35%,#ff9cc4,#ff3f8e 50%,#a8174f);
+box-shadow:0 0 34px rgba(255,63,142,.35);animation:wax-rise 52s ease-in-out -30s infinite}
+html[data-fx=wax] body{font-family:var(--rnd);margin:1.4rem auto 2rem;background:transparent}
+html[data-fx=wax] h1{font-size:0!important;margin:1.6rem 0 1.1rem;display:flex;flex-direction:column;align-items:flex-start;gap:.45rem}
+html[data-fx=wax] h1::before{content:'pineport';font:800 2rem/1.05 var(--rnd);letter-spacing:-.01em;
+background:linear-gradient(#ffd27a,#ff8a3d 45%,#ff3f8e);-webkit-background-clip:text;background-clip:text;color:transparent;
+filter:drop-shadow(0 0 10px rgba(255,110,60,.45))}
+html[data-fx=wax] h1::after{content:'MELTED ' attr(data-lines) '\\A' attr(data-host);white-space:pre;
+font:600 .62rem/1.6 var(--rnd);letter-spacing:.22em;color:var(--dim)}
+html[data-fx=wax] :is(#stats,.card,table,#tpanel){background:var(--glass);border:1px solid var(--edge);border-radius:18px;
+box-shadow:0 8px 28px rgba(0,0,0,.4),inset 0 1px 0 rgba(255,200,150,.07)}
+html[data-fx=wax] #stats{padding:.75rem .95rem}html[data-fx=wax] .card{padding:.6rem .95rem}
+html[data-fx=wax] #stats b{color:var(--or);font-weight:700}
+html[data-fx=wax] .meter{width:6rem;height:.5rem;border-radius:9px;overflow:visible;background:rgba(255,138,61,.1);box-shadow:inset 0 1px 2px rgba(0,0,0,.5)}
+html[data-fx=wax] .meter i{position:relative;min-width:.5rem;color:var(--or);border-radius:9px;
+background:linear-gradient(90deg,rgba(255,63,142,.75),currentColor);box-shadow:0 0 8px rgba(255,138,61,.45);transition:width 2.6s cubic-bezier(.45,0,.2,1)}
+html[data-fx=wax] .warn i{color:var(--warn)}html[data-fx=wax] .crit i{color:var(--kill);background:linear-gradient(90deg,#a8174f,currentColor)}
+html[data-fx=wax] .meter i::before{content:'';position:absolute;right:-.2rem;top:50%;width:.8rem;height:.8rem;margin-top:-.4rem;border-radius:50%;
+background:radial-gradient(circle at 35% 35%,#ffe0b8,currentColor 60%);animation:wax-bulb 5s ease-in-out var(--ph,0s) infinite}
+html[data-fx=wax] .meter i::after{content:'';position:absolute;right:-.05rem;top:50%;width:.4rem;height:.4rem;margin-top:-.2rem;border-radius:50%;
+background:currentColor;animation:wax-shed 7s ease-in-out var(--ph,0s) infinite}
+html[data-fx=wax] #theme button{background:var(--glass);border-color:var(--edge)}
+html[data-fx=wax] #tpanel button{border-radius:999px}html[data-fx=wax] #tpanel button.sel{background:rgba(255,138,61,.14)}
+html[data-fx=wax] h2{font-family:var(--rnd);font-weight:800;letter-spacing:.02em}
+html[data-fx=wax] table{border-collapse:separate;border-spacing:0;padding:.2rem .3rem}
+html[data-fx=wax] th{font-size:.66rem;font-weight:700;letter-spacing:.16em;border-bottom:1px solid var(--edge)}
+html[data-fx=wax] td{border-bottom:1px solid rgba(255,138,61,.1)}html[data-fx=wax] tbody tr:last-child td{border-bottom:0}
+html[data-fx=wax] td:first-child{overflow-wrap:break-word;font-weight:700}html[data-fx=wax] .mem{white-space:nowrap;color:var(--dim)}
+html[data-fx=wax] tbody tr:hover td{background:rgba(255,138,61,.06)}
+html[data-fx=wax] a{text-decoration:none;border-bottom:1px dotted rgba(255,138,61,.55)}
+html[data-fx=wax] tr.drop td{animation:wax-in 1.1s ease-out calc(min(var(--r),12)*70ms) both}
+html[data-fx=wax] .badge{font-size:0;padding:0;margin-left:.3rem;background:none;vertical-align:.05rem;white-space:nowrap}
+html[data-fx=wax] .badge::before{content:'';display:inline-block;width:.42rem;height:.52rem;border-radius:50%/60% 60% 40% 40%;vertical-align:-.02rem;
+background:radial-gradient(circle at 40% 35%,#fff1c2,var(--warn) 65%);box-shadow:0 0 6px rgba(255,210,90,.7)}
+html[data-fx=wax] .badge::after{content:'NEW';margin-left:.22rem;font:700 .56rem/1 var(--rnd);letter-spacing:.1em;color:var(--warn)}
+html[data-fx=wax] button{font-family:var(--rnd);border-radius:999px;-webkit-tap-highlight-color:transparent}
+html[data-fx=wax] button[data-p]{position:relative;font-size:0;padding:.3rem .75rem;white-space:nowrap;background:rgba(255,63,142,.12);border-color:rgba(255,63,142,.7)}
+html[data-fx=wax] button[data-p]::before{content:'';position:absolute;inset:-1px;border-radius:inherit;pointer-events:none;opacity:.15;
+box-shadow:0 0 10px 1px var(--kill),inset 0 0 6px rgba(255,63,142,.5);animation:wax-glow 4.5s ease-in-out var(--ph,0s) infinite alternate}
+html[data-fx=wax] button[data-p]::after{content:'MELT';font-size:.66rem;font-weight:800;letter-spacing:.1em}
+html[data-fx=wax] button[data-p]:hover,html[data-fx=wax] button[data-p]:active{color:#2a0614;border-color:var(--kill);background:radial-gradient(circle at 35% 30%,#ffa3c8,var(--kill) 55%,#c01f5c)}
+html[data-fx=wax] tr.clr td{padding:0;border:0}
+html[data-fx=wax] tr.clr div{position:relative;height:var(--h);animation:wax-gone 1.4s ease-in both}
+html[data-fx=wax] tr.clr div::before{content:'';position:absolute;inset:.2rem 0;border-radius:.8rem;transform-origin:50% 0;
+background:linear-gradient(90deg,#e8336f,#ff8a3d 55%,#ffc05a);box-shadow:0 0 14px rgba(255,110,60,.55);animation:wax-melt 1.4s both}
+html[data-fx=wax] tr.clr div::after{content:'';position:absolute;left:28%;top:calc(var(--h) - .9rem);width:.75rem;height:.9rem;
+border-radius:50%/40% 40% 60% 60%;background:var(--or);animation:wax-drip 1.4s ease-in both}
+html[data-fx=wax] tr.clr span{position:absolute;left:.8rem;top:0;line-height:var(--h);white-space:nowrap;font-weight:800;color:#2a0614;
+transform-origin:50% 0;animation:wax-name 1.4s both}
+html[data-fx=wax] #msg{color:var(--dim);font-size:.75rem;letter-spacing:.04em}
+html[data-fx=wax] body:has(#pin){margin:0;min-height:100vh}
+html[data-fx=wax] body:has(#pin) h1{align-items:center;gap:.9rem;margin:0 0 1.6rem}
+html[data-fx=wax] body:has(#pin) h1::after{content:'WARMING UP\\A' attr(data-host);text-align:center}
+html[data-fx=wax] #pin{border-radius:999px;border-color:var(--edge);background:var(--glass);color:var(--or);outline:none}
+html[data-fx=wax] #pin:focus{border-color:var(--or);box-shadow:0 0 14px rgba(255,138,61,.45)}
+html[data-fx=wax] body:has(#pin) button{font-size:0;border-radius:999px;background:rgba(255,138,61,.14);border-color:var(--or)}
+html[data-fx=wax] body:has(#pin) button::after{content:'SWITCH ON';font-size:.8rem;font-weight:800;letter-spacing:.06em;color:var(--or)}
+@media (max-width:600px){html[data-fx=wax] body{margin:.5rem;padding:0 .5rem 1rem}
+html[data-fx=wax] h1{margin-top:1.4rem}html[data-fx=wax] h1::before{font-size:1.7rem}
+html[data-fx=wax] table{font-size:.8rem;padding:.1rem}html[data-fx=wax] td{padding:.5rem .35rem}html[data-fx=wax] th{padding:.45rem .35rem;letter-spacing:.12em}
+html[data-fx=wax] .meter{width:4.5rem}
+html[data-fx=wax] .badge{margin-left:.2rem}html[data-fx=wax] .badge::after{display:none}
+html[data-fx=wax] button[data-p]{padding:.3rem .55rem}html[data-fx=wax] button[data-p]::after{font-size:.62rem}}
+@keyframes wax-rise{0%,100%{transform:translateY(75%) scale(1.06,.9)}28%{transform:translateY(-32vh) scale(.92,1.1)}
+50%{transform:translateY(calc(120% - 100vh)) scale(1.05,.94)}74%{transform:translateY(-38vh) scale(.94,1.07)}}
+@keyframes wax-bulb{0%,100%{transform:scale(1,.92)}50%{transform:scale(.9,1.1)}}
+@keyframes wax-shed{0%,30%,100%{transform:none;opacity:1}62%{transform:translateX(.75rem) scale(.8)}76%{transform:translateX(.85rem) scale(.6);opacity:.85}}
+@keyframes wax-glow{to{opacity:.7}}
+@keyframes wax-in{0%{opacity:0;background:rgba(255,138,61,.4)}35%{opacity:1;background:rgba(255,63,142,.22)}}
+@keyframes wax-gone{0%,72%{height:var(--h)}100%{height:0}}
+@keyframes wax-melt{0%{opacity:0;transform:scale(.96,.3)}18%,50%{opacity:1;transform:none;border-radius:.8rem}
+80%{opacity:.9;transform:translateY(25%) scaleY(.55);border-radius:.4rem .4rem 1.2rem 1.2rem}100%{opacity:0;transform:translateY(60%) scaleY(.2)}}
+@keyframes wax-drip{0%,45%{opacity:0;transform:none}55%{opacity:1;transform:none}100%{opacity:0;transform:translateY(2.4rem) scale(.6,1.2)}}
+@keyframes wax-name{0%,15%{opacity:0}25%,50%{opacity:1;transform:none}85%,100%{opacity:0;transform:translateY(.5rem) scaleY(1.9)}}
 @keyframes twinkle{from{opacity:.25}to{opacity:1}}
 @keyframes fly{0%{transform:translate(-120px,1.2rem) rotate(-4deg)}5%{transform:translate(25vw,.4rem) rotate(3deg)}
 10%{transform:translate(50vw,1.4rem) rotate(-3deg)}15%{transform:translate(75vw,.3rem) rotate(4deg)}20%,100%{transform:translate(calc(100vw + 40px),1rem) rotate(-2deg)}}
@@ -1601,7 +1692,7 @@ html[data-fx=ufo] button[data-p]{padding:.3rem .5rem}html[data-fx=ufo] button[da
 @keyframes pulse{50%{opacity:.55}}
 @keyframes flap-top{to{transform:perspective(500px) rotateX(-90deg);filter:brightness(.5)}}
 @keyframes flap-bot{from{transform:perspective(500px) rotateX(90deg);filter:brightness(.5)}}
-@media (prefers-reduced-motion:reduce){html[data-fx] *,html[data-fx] *::before,html[data-fx] *::after,html[data-fx]::before,html[data-fx]::after{animation:none!important}html[data-fx=flap] .fl,html[data-fx=rust]::before,html[data-fx=tet] .clr,html[data-fx=ufo] .clr,html[data-fx=ufo]::after{display:none}}"""
+@media (prefers-reduced-motion:reduce){html[data-fx] *,html[data-fx] *::before,html[data-fx] *::after,html[data-fx]::before,html[data-fx]::after{animation:none!important}html[data-fx=flap] .fl,html[data-fx=rust]::before,html[data-fx=tet] .clr,html[data-fx=ufo] .clr,html[data-fx=ufo]::after,html[data-fx=wax] .clr{display:none}html[data-fx=wax] .meter i{transition:none}}"""
 
 # Press Start 2P by CodeMan38 (SIL OFL 1.1), subset to printable ASCII, woff2.
 # Tetromino's pixel font, embedded so the page needs no network.
@@ -1659,6 +1750,8 @@ button:hover{background:var(--kill);color:var(--bg)}
 #stats{display:flex;flex-wrap:wrap;gap:.4rem 1.4rem;padding:.6rem .8rem;margin:0 0 1.2rem;
 border:1px solid var(--line);border-radius:6px;font-size:.85rem}
 #stats b{color:var(--accent);font-weight:normal}
+/* values get fixed-width slots (--w digits) so a longer reading doesn't rewrap the bar and shove the page */
+#stats b[style]{display:inline-block;min-width:calc(var(--w)*1ch + .2em);font-variant-numeric:tabular-nums}
 .meter{display:inline-block;width:5.5rem;height:.45rem;background:var(--barbg);
 border-radius:3px;vertical-align:middle;margin-left:.35rem;overflow:hidden}
 .meter i{display:block;height:100%;background:var(--accent);border-radius:3px}
@@ -1707,23 +1800,32 @@ function rate(b){return b>=1048576?(b/1048576).toFixed(1)+'MB/s':b>=1024?Math.ro
 function meter(pct){const cls=pct>90?'crit':pct>75?'warn':'';
  return `<span class="meter ${cls}"><i style="width:${Math.min(pct,100)}%"></i></span>`}
 let cells={};  /* last {text, html} per pid+column, so the flap skin flips only what changed */
-let lines=0;   /* rows the tetromino skin has cleared / the saucer has abducted this visit */
+let lines=0;   /* rows the tetromino skin has cleared / the saucer has abducted / molten has melted this visit */
 async function refresh(){
  const h=document.documentElement;h.classList.add('io');setTimeout(()=>h.classList.remove('io'),200);
  const r=await fetch('/api/services');const d=await r.json();
- const st=d.stats;
- document.querySelector('#stats').innerHTML=
-  `<span>CPU <b>${st.cpu_pct}%</b>${meter(st.cpu_pct)}</span>`+
-  `<span>RAM <b>${st.ram_used}/${st.ram_total}G</b> <b>${st.ram_pct}%</b>${meter(st.ram_pct)}</span>`+
-  `<span>DISK <b>${st.disk_pct}%</b>${meter(st.disk_pct)}</span>`+
-  `<span>free <b>${st.disk_free}G</b></span>`+
-  `<span>load <b>${st.load1}</b></span><span>up <b>${st.uptime}</b></span>`+
-  `<span>NET in <b>${rate(st.net_down)}</b> out <b>${rate(st.net_up)}</b></span>`+
-  `<span>conns <b>${st.conns}</b></span>`;
- const tb=document.querySelector('#t tbody'),was=cells,fx=h.dataset.fx,gone=fx==='tet'||fx==='ufo';
- /* tetromino/saucer: remember each row's pid and height so a vanished one can clear */
+ const st=d.stats,sb=document.querySelector('#stats');
+ const prev=[...sb.querySelectorAll('.meter i')].map(i=>i.style.width);
+ /* stats and rows are rebuilt every poll: a negative delay picks looping skin
+    animations up where a shared clock says they are, instead of restarting */
+ const ph=-(performance.now()%315000)/1000+'s';sb.style.setProperty('--ph',ph);
+ sb.innerHTML=
+  `<span>CPU <b style="--w:4">${st.cpu_pct}%</b>${meter(st.cpu_pct)}</span>`+
+  `<span>RAM <b style="--w:9">${st.ram_used}/${st.ram_total}G</b> <b style="--w:3">${st.ram_pct}%</b>${meter(st.ram_pct)}</span>`+
+  `<span>DISK <b style="--w:3">${st.disk_pct}%</b>${meter(st.disk_pct)}</span>`+
+  `<span>free <b style="--w:4">${st.disk_free}G</b></span>`+
+  `<span>load <b style="--w:4">${st.load1}</b></span><span>up <b>${st.uptime}</b></span>`+
+  `<span>NET in <b style="--w:7">${rate(st.net_down)}</b> out <b style="--w:7">${rate(st.net_up)}</b></span>`+
+  `<span>conns <b style="--w:3">${st.conns}</b></span>`;
+ /* skins whose meters transition (molten) ooze from the last poll's % instead of snapping */
+ const mi=[...sb.querySelectorAll('.meter i')];
+ if(prev.length===mi.length){const to=mi.map(i=>i.style.width);mi.forEach((i,k)=>i.style.width=prev[k]);
+  sb.offsetWidth;mi.forEach((i,k)=>i.style.width=to[k])}
+ h.style.setProperty('--heat',Math.min(st.cpu_pct,100)/100);  /* molten's wax blobs swell with CPU */
+ const tb=document.querySelector('#t tbody'),was=cells,fx=h.dataset.fx,gone=fx==='tet'||fx==='ufo'||fx==='wax';
+ /* tetromino/saucer/molten: remember each row's pid and height so a vanished one can clear */
  const old=gone?[...tb.rows].map(r=>[r.dataset.pid,r.offsetHeight]):[];
- tb.innerHTML='';cells={};let fresh=0;
+ tb.style.setProperty('--ph',ph);tb.innerHTML='';cells={};let fresh=0;
  d.services.forEach(s=>{
   const tr=document.createElement('tr');tr.dataset.pid=s.pid;
   if(gone&&!was[s.pid+'.0']){tr.className='drop';tr.style.setProperty('--r',fresh++)}
