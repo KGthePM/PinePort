@@ -1811,11 +1811,14 @@ async function loadAddon(name,live){
    document.querySelector('#addon-'+name+' .card'),await r.json());}
  catch(e){document.querySelector('#addon-'+name+' .card').textContent='error: '+(e&&e.message?e.message:e)}
  if(btn){btn.disabled=false;btn.textContent='refresh';}}
-/* AI usage is checked often, so it sits above the long services table;
-   other add-ons stay below it. */
-for(const name of ADDONS){
- const top=name==='needle',wrap=document.createElement('div');wrap.id='addon-'+name;
- wrap.innerHTML=`<h2 style="font-size:.95rem;color:var(--accent);margin:${top?'0 0 .4rem':'1.6rem 0 .4rem'}"><span class=fold style="cursor:pointer">${top?'AI usage':name}</span>
+/* AI usage and Docker are checked often, so they sit above the long
+   services table; other add-ons stay below it. Needle is pinned first
+   (its margin assumes it leads); the server sends the rest sorted. */
+const TOP_ORDER=['needle','docker'];
+for(const name of [...TOP_ORDER.filter(n=>ADDONS.includes(n)),
+                    ...ADDONS.filter(n=>!TOP_ORDER.includes(n))]){
+ const top=TOP_ORDER.includes(name),wrap=document.createElement('div');wrap.id='addon-'+name;
+ wrap.innerHTML=`<h2 style="font-size:.95rem;color:var(--accent);margin:${name==='needle'?'0 0 .4rem':top?'.6rem 0 .4rem':'1.6rem 0 .4rem'}"><span class=fold style="cursor:pointer">${name==='needle'?'AI usage':name}</span>
   <button style="background:var(--killbg);color:var(--accent);border-color:var(--accent);font-size:.75rem;padding:.1rem .5rem">refresh</button></h2>
   <div class=card style="font-size:.85rem"></div>`;
  foldable(wrap.querySelector('.fold'),wrap.querySelector('.card'),'pp_fold_'+name);
