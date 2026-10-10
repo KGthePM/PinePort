@@ -226,6 +226,8 @@ class WinStats(unittest.TestCase):
                   "disk_free", "uptime", "load1", "net_down", "net_up", "conns"):
             self.assertIn(k, st)
         self.assertEqual(st["ram_pct"], 55.5)
+        self.assertEqual(st["ram_used"], 8.0)
+        self.assertEqual(st["ram_total"], 16.0)
         self.assertEqual(st["disk_pct"], 70.2)
         self.assertEqual(st["load1"], 0.0)
 

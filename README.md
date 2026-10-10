@@ -48,7 +48,7 @@ for process names/RAM and the stats bar:
 
 ```powershell
 git clone https://github.com/KGthePM/PinePort.git; cd PinePort
-pip install psutil
+python -m pip install psutil
 .\start-pineports.cmd      # prompt for a PIN if needed, start, open dashboard
 .\restart-pineports.cmd    # reload PinePort and newly installed add-ons
 .\stop-pineports.cmd
@@ -57,7 +57,9 @@ pip install psutil
 
 - The CMD launchers are double-clickable. Their shared PowerShell implementation
   is `windows\pineports.ps1`. Runtime PID and logs are stored under
-  `%APPDATA%\pineports\`.
+  `%APPDATA%\pineports\`. If several Python installations are available, the
+  launcher selects one with `psutil`; if none has it, the launcher prints the
+  exact install command instead of starting with an empty stats bar.
 - Manual commands remain available: `python pineports`,
   `python pineports --set-pin`, `python pineports kill <port>`, and
   `python pineports --web`.
@@ -69,8 +71,8 @@ pip install psutil
 - **Docker Desktop:** published ports stop the container, same as Linux.
 - **Config:** `%APPDATA%\pineports\` — same filenames as Linux
   (`pineports-pin`, `pineports-labels.conf`, `pineports-seen.json`).
-- **No psutil?** The table still lists ports + pids; install psutil for
-  names, RAM, and the stats bar.
+- **No psutil?** A manual launch still lists ports + pids; install psutil for
+  names, RAM, kills, and the stats bar.
 - **AI usage:** install [Needle](https://github.com/KGthePM/Needle). PinePort
   discovers `needle` on PATH and the standard
   `%LOCALAPPDATA%\Needle\bin\needle.py` installation. Restart PinePort after

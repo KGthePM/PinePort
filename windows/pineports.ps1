@@ -17,23 +17,35 @@ $stderrLog = Join-Path $configDir 'pineports.stderr.log'
 $webPort = 6310
 
 function Resolve-Python3 {
-    $candidate = Get-Command python.exe -ErrorAction SilentlyContinue
-    if ($candidate) {
-        & $candidate.Source -c 'import sys; raise SystemExit(sys.version_info.major != 3)' 2>$null
+    $candidates = @(Get-Command python.exe -All -ErrorAction SilentlyContinue |
+        ForEach-Object { [pscustomobject]@{ File = $_.Source; Prefix = @() } })
+    $launcher = Get-Command py.exe -ErrorAction SilentlyContinue
+    if ($launcher) {
+        $candidates += [pscustomobject]@{ File = $launcher.Source; Prefix = @('-3') }
+    }
+
+    $fallback = $null
+    foreach ($candidate in $candidates) {
+        $versionArgs = @($candidate.Prefix) + @(
+            '-c', 'import sys; raise SystemExit(sys.version_info < (3, 8))')
+        & $candidate.File @versionArgs 2>$null
         if ($LASTEXITCODE -eq 0) {
-            return [pscustomobject]@{ File = $candidate.Source; Prefix = @() }
+            if (-not $fallback) { $fallback = $candidate }
+            # Avoid an ImportError traceback: Windows PowerShell 5.1 treats
+            # native stderr as terminating when ErrorActionPreference is Stop.
+            $psutilArgs = @($candidate.Prefix) + @(
+                '-c', "import importlib.util; raise SystemExit(importlib.util.find_spec('psutil') is None)")
+            & $candidate.File @psutilArgs 2>$null
+            if ($LASTEXITCODE -eq 0) { return $candidate }
         }
     }
 
-    $candidate = Get-Command py.exe -ErrorAction SilentlyContinue
-    if ($candidate) {
-        & $candidate.Source -3 -c 'import sys; raise SystemExit(sys.version_info.major != 3)' 2>$null
-        if ($LASTEXITCODE -eq 0) {
-            return [pscustomobject]@{ File = $candidate.Source; Prefix = @('-3') }
-        }
+    if ($fallback) {
+        $installArgs = @($fallback.Prefix) + @('-m', 'pip', 'install', 'psutil')
+        throw ('psutil is not installed for any available Python 3.8+. Run: "' +
+               $fallback.File + '" ' + ($installArgs -join ' '))
     }
-
-    throw 'Python 3 was not found on PATH.'
+    throw 'Python 3.8 or newer was not found on PATH.'
 }
 
 function Test-PinePortProcess {

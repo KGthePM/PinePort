@@ -203,8 +203,8 @@ def win_sys_stats():
     net = win_net()
     return {
         "ram_pct": round(vm.percent, 1),
-        "ram_used": round(vm.used / 1048576, 1),
-        "ram_total": round(vm.total / 1048576, 1),
+        "ram_used": round(vm.used / 2**30, 1),
+        "ram_total": round(vm.total / 2**30, 1),
         "cpu_pct": win_cpu_pct(),
         "disk_pct": round(du.percent, 1),
         "disk_free": round(du.free / 2**30, 0),
@@ -244,7 +244,7 @@ def win_gather():
 def win_kill_pid(pid, port):
     """terminate() then kill(); honest error for other users' processes."""
     if not _psutil:
-        return "psutil not installed — run: pip install psutil"
+        return f'psutil not installed — run: "{sys.executable}" -m pip install psutil'
     try:
         p = _psutil.Process(pid)
         pname = p.name()

@@ -2,6 +2,10 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Versioning
+
+Follow the required Semantic Versioning and pre-push rules in `AGENTS.md`. The root `VERSION` file is authoritative.
+
 ## What this is
 
 PinePort (`pineports`, formerly `ports`) is a single-file Python 3 tool for one Linux box: it lists listening services (name, RSS, ports), kills them by port, and serves a PIN-gated web UI on `:6310`. No build step, no package manager, stdlib only (`setproctitle` optional).

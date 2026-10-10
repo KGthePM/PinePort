@@ -2,7 +2,7 @@
 """Real-Windows smoke test for PinePort. Skips on other OSes.
 
 Run on a Windows box with:  python test_windows.py
-Requires psutil:  pip install psutil
+Requires psutil:  python -m pip install psutil
 """
 import hashlib, http.client, json, os, subprocess, sys, tempfile, threading, time, unittest
 from unittest import mock
@@ -27,6 +27,10 @@ WIN_REASON = "runs only on Windows (smoke test against real OS)"
 
 @unittest.skipUnless(IS_WIN, WIN_REASON)
 class WinSmoke(unittest.TestCase):
+    def test_psutil_available(self):
+        self.assertIsNotNone(
+            pp._psutil, f"psutil is not installed for {sys.executable}")
+
     def test_listeners_nonempty(self):
         got = pp.win_listeners()
         self.assertIsInstance(got, list)
@@ -52,11 +56,20 @@ class WinSmoke(unittest.TestCase):
         else:
             self.assertTrue(os.path.basename(cmd).startswith("pineports-docker"))
 
-    def test_sys_stats_shape(self):
+    def test_sys_stats_values(self):
         st = pp.sys_stats()
         for k in ("ram_pct", "ram_used", "ram_total", "cpu_pct", "disk_pct",
-                  "disk_free", "uptime", "load1"):
+                  "disk_free", "uptime", "load1", "net_down", "net_up", "conns"):
             self.assertIn(k, st)
+        self.assertGreater(st["ram_total"], 0)
+        self.assertAlmostEqual(
+            st["ram_total"],
+            round(pp._psutil.virtual_memory().total / 2**30, 1), places=1)
+        self.assertGreaterEqual(st["ram_pct"], 0)
+        self.assertLessEqual(st["ram_pct"], 100)
+        self.assertGreaterEqual(st["disk_pct"], 0)
+        self.assertLessEqual(st["disk_pct"], 100)
+        self.assertNotEqual(st["uptime"], "-")
 
     def test_web_login_and_services(self):
         with open(pp.PIN_FILE, "w") as f:
