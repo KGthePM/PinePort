@@ -650,7 +650,9 @@ retro:{bg:'#0b1a0f',fg:'#39ff6a',dim:'#1f9e45',line:'#14361e',accent:'#66ff99',k
 departures:{bg:'#0b0b0b',fg:'#f4f1e8',dim:'#8a8577',line:'#262626',accent:'#ffc61a',kill:'#ff4b3e',killbg:'#2a0d0b',barbg:'#1a1a1a',warn:'#ff9f1a',warnbg:'#2e1f08',
  _fx:'flap',_bar:'#ffc61a',_dot:'linear-gradient(#ffc61a 0 45%,#111 45% 55%,#e0ad00 55%)'},
 wasteland:{bg:'#120c0a',fg:'#e6d9c3',dim:'#9a8a76',line:'#3a2620',accent:'#d0643a',kill:'#ff3b30',killbg:'#3a0f0c',barbg:'#24170f',warn:'#e8a33a',warnbg:'#3d2810',
- _fx:'rust',_bar:'#5a2414',_dot:'radial-gradient(#9cff3a 22%,#b5452a 30% 62%,#4a1e12 68%)'}};
+ _fx:'rust',_bar:'#5a2414',_dot:'radial-gradient(#9cff3a 22%,#b5452a 30% 62%,#4a1e12 68%)'},
+tetromino:{bg:'#0a0c24',fg:'#e8ecff',dim:'#8a90c0',line:'#1e2352',accent:'#31c7ef',kill:'#ef2029',killbg:'#2a0c18',barbg:'#161a44',warn:'#f7d308',warnbg:'#3a3410',
+ _fx:'tet',_bar:'#06071a',_dot:'conic-gradient(#31c7ef 0 25%,#f7d308 0 50%,#ef2029 0 75%,#42d642 0)'}};
 /* _keys aren't colors: _fx turns on an effect skin (FX_CSS), _bar tints the
    phone's browser bar instead of bg, _dot styles the picker swatch */
 /* auto follows the OS light/dark setting */
@@ -1244,6 +1246,83 @@ html[data-fx=rust] body:has(#pin) button::after{content:'ENTER';font-size:.9rem;
 html[data-fx=rust] h1::before{font-size:1rem;letter-spacing:.1em}html[data-fx=rust] td,html[data-fx=rust] th{padding:.4rem .35rem}
 html[data-fx=rust] .badge::after{content:'\\2622\\FE0E';font-size:.85rem}
 html[data-fx=rust] button[data-p]{padding:.15rem .4rem}html[data-fx=rust] button[data-p]::after{content:'\\2715';font-size:.9rem}}
+/* Tetromino: the page is a Tetris well. Gray block frame, faint grid, pixel
+   font (Press Start 2P, OFL, ASCII subset embedded below). Each row shows a
+   piece in its colour, cycling I O T S Z J L. refresh() tags rows whose pid is
+   new with .drop (they fade in while the piece falls, cascading on first
+   load) and puts a .clr row where a pid vanished: it flashes white, clears
+   from the centre out and collapses, then removes itself. LINES counts the
+   clears. Kill reads DROP, new ports NEXT, the login INSERT COIN / START.
+   Sizes are multiples of 2px so the font stays crisp on phones. */
+@font-face{font-family:PS2P;src:url(data:font/woff2;base64,__PIXELFONT__) format('woff2');font-display:block}
+html[data-fx=tet]{--px:PS2P,ui-monospace,Menlo,Consolas,monospace;--s:.375rem;-webkit-text-size-adjust:100%;
+--bev:inset 2px 2px 0 rgba(255,255,255,.45),inset -2px -2px 0 rgba(0,0,0,.45);--edge:#2a2f66;
+--brick:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 8 8' shape-rendering='crispEdges'%3E%3Cpath fill='%23676c98' d='M0 0h8v8H0z'/%3E%3Cpath fill='%23a3a8d4' d='M0 0h8v1H1v7H0z'/%3E%3Cpath fill='%2337395e' d='M8 8H0V7h7V0h1z'/%3E%3C/svg%3E");
+--grid:linear-gradient(rgba(255,255,255,.035) 1px,transparent 1px) 0 0/1.25rem 1.25rem padding-box,
+linear-gradient(90deg,rgba(255,255,255,.035) 1px,transparent 1px) 0 0/1.25rem 1.25rem padding-box;background:#06071a;min-height:100%}
+html[data-fx=tet] body{box-sizing:border-box;margin:1.2rem auto 2rem;padding:1.2rem 1.1rem 1.1rem;border:.75rem solid transparent;
+font-family:var(--px);font-size:.75rem;line-height:1.75;background:var(--grid),linear-gradient(#0a0c24,#0a0c24) padding-box,
+var(--brick) 0 0/.75rem .75rem round border-box;box-shadow:0 12px 40px rgba(0,0,0,.6)}
+html[data-fx=tet] h1{font-size:0!important;margin:0 0 1.1rem;display:flex;align-items:flex-end;justify-content:space-between;gap:.8rem}
+html[data-fx=tet] h1::before{content:'PINEPORT';font-size:1.5rem;line-height:1;color:transparent;
+background:linear-gradient(90deg,#31c7ef 0 1em,#f7d308 0 2em,#ad4dff 0 3em,#42d642 0 4em,#ef2029 0 5em,#4a7dff 0 6em,#ff8a1f 0 7em,#31c7ef 0);
+-webkit-background-clip:text;background-clip:text;filter:drop-shadow(2px 2px 0 #000)}
+html[data-fx=tet] h1::after{content:'LINES ' attr(data-lines) '\\A' attr(data-host);white-space:pre;text-align:right;
+font-size:.5rem;line-height:1.8;color:var(--dim)}
+html[data-fx=tet] #stats{border:0;border-radius:0;background:#060818;box-shadow:inset 0 0 0 2px var(--edge);font-size:.625rem;padding:.7rem .8rem}
+html[data-fx=tet] .meter,html[data-fx=tet] .meter i{border-radius:0}
+html[data-fx=tet] .meter{height:.5rem;background:#000;box-shadow:inset 0 0 0 1px var(--edge)}
+html[data-fx=tet] .meter i{color:var(--accent);background:repeating-linear-gradient(90deg,currentColor 0 .375rem,transparent .375rem .5rem)}
+html[data-fx=tet] .warn i{color:var(--warn)}html[data-fx=tet] .crit i{color:var(--kill)}
+html[data-fx=tet] #theme span{border-radius:0;box-shadow:var(--bev)}
+html[data-fx=tet] th{font-size:.5rem;border-bottom:2px solid var(--edge);padding:.5rem .4rem}
+html[data-fx=tet] td{padding:.6rem .4rem;border-bottom:1px dashed rgba(255,255,255,.07)}
+html[data-fx=tet] td:first-child{overflow-wrap:break-word;position:relative;padding-left:calc(var(--s)*4 + 1rem)}html[data-fx=tet] .mem{white-space:nowrap}
+html[data-fx=tet] tbody tr:nth-child(7n+1 of :not(.clr)){--pc:#31c7ef;--at:0 50%,33.3% 50%,66.7% 50%,100% 50%}
+html[data-fx=tet] tbody tr:nth-child(7n+2 of :not(.clr)){--pc:#f7d308;--at:33.3% 0,66.7% 0,33.3% 100%,66.7% 100%}
+html[data-fx=tet] tbody tr:nth-child(7n+3 of :not(.clr)){--pc:#ad4dff;--at:0 0,33.3% 0,66.7% 0,33.3% 100%}
+html[data-fx=tet] tbody tr:nth-child(7n+4 of :not(.clr)){--pc:#42d642;--at:33.3% 0,66.7% 0,0 100%,33.3% 100%}
+html[data-fx=tet] tbody tr:nth-child(7n+5 of :not(.clr)){--pc:#ef2029;--at:0 0,33.3% 0,33.3% 100%,66.7% 100%}
+html[data-fx=tet] tbody tr:nth-child(7n+6 of :not(.clr)){--pc:#4a7dff;--at:0 0,0 100%,33.3% 100%,66.7% 100%}
+html[data-fx=tet] tbody tr:nth-child(7n+7 of :not(.clr)){--pc:#ff8a1f;--at:66.7% 0,0 100%,33.3% 100%,66.7% 100%}
+html[data-fx=tet] td:first-child::before{content:'';position:absolute;left:.4rem;top:50%;margin-top:calc(var(--s)*-1);
+width:calc(var(--s)*4);height:calc(var(--s)*2);--g:linear-gradient(var(--pc) 0 0);background:var(--g),var(--g),var(--g),var(--g);
+background-position:var(--at);background-size:calc(var(--s) - 1px) calc(var(--s) - 1px);background-repeat:no-repeat}
+html[data-fx=tet] tr.drop td{animation:tet-in .3s steps(3) calc(min(var(--r),12)*70ms) both}
+html[data-fx=tet] tr.drop td:first-child::before{animation:tet-fall .4s steps(4) calc(min(var(--r),12)*70ms) both}
+html[data-fx=tet] tr.clr td{padding:0;border:0}
+html[data-fx=tet] tr.clr div{height:var(--h);background:repeating-linear-gradient(90deg,#fff 0 calc(1.25rem - 2px),#c8cce8 0 1.25rem);
+animation:tet-clr .8s both}
+html[data-fx=tet] a{text-decoration:none;border-bottom:1px dotted}
+html[data-fx=tet] .badge{font-size:0;padding:0;margin-left:.4rem;border-radius:0;background:#f7d308;box-shadow:var(--bev);vertical-align:.1rem}
+html[data-fx=tet] .badge::after{content:'NEXT';display:inline-block;font-size:.5rem;line-height:1;color:#000;padding:.25rem .3rem}
+html[data-fx=tet] button{font-family:var(--px);border-radius:0;-webkit-tap-highlight-color:transparent}
+html[data-fx=tet] button[data-p]{font-size:0;padding:0;border:0;background:var(--kill);box-shadow:var(--bev)}
+html[data-fx=tet] button[data-p]::after{content:'DROP';display:block;font-size:.625rem;line-height:1;color:#fff;padding:.7rem .6rem}
+html[data-fx=tet] button[data-p]:active{box-shadow:inset -2px -2px 0 rgba(255,255,255,.35),inset 2px 2px 0 rgba(0,0,0,.5);transform:translateY(1px)}
+html[data-fx=tet] h2{font-size:.75rem!important;line-height:2}
+html[data-fx=tet] .card{font-family:ui-monospace,Menlo,Consolas,monospace;line-height:1.4}
+html[data-fx=tet] #msg{color:var(--dim);font-size:.5rem;line-height:1.8}
+html[data-fx=tet] body:has(#pin){margin:0;min-height:100vh;border:0;box-shadow:none}
+html[data-fx=tet] body:has(#pin) h1{flex-direction:column;align-items:center;gap:1rem;margin-bottom:1.6rem}
+html[data-fx=tet] body:has(#pin) h1::after{content:'INSERT COIN\\A' attr(data-host);text-align:center;font-size:.625rem;animation:tet-blink 1.2s steps(1) infinite}
+html[data-fx=tet] #pin{font-family:var(--px);font-size:1.25rem;border:2px solid var(--edge);border-radius:0;background:#000;color:var(--accent);outline:none}
+html[data-fx=tet] #pin:focus{border-color:var(--accent)}
+html[data-fx=tet] body:has(#pin) button{font-size:0;border:0;background:#42d642;box-shadow:var(--bev)}
+html[data-fx=tet] body:has(#pin) button::after{content:'START';font-size:.75rem;color:#000}
+@media (max-width:600px){html[data-fx=tet]{--s:.25rem}
+html[data-fx=tet] body{margin:.5rem;padding:.9rem .6rem .8rem;border-width:.5rem;font-size:.625rem;background-size:1.25rem 1.25rem,1.25rem 1.25rem,auto,.5rem .5rem}
+html[data-fx=tet] h1::before{font-size:1.25rem}html[data-fx=tet] #stats{font-size:.5rem;gap:.5rem 1rem;padding:.6rem}
+html[data-fx=tet] table{font-size:.5rem}html[data-fx=tet] td{padding:.6rem .25rem}html[data-fx=tet] th{padding:.5rem .25rem}
+html[data-fx=tet] td:first-child{padding-left:calc(var(--s)*4 + .6rem)}html[data-fx=tet] td:first-child::before{left:.2rem}
+html[data-fx=tet] .badge{margin-left:.25rem}html[data-fx=tet] .badge::after{padding:.2rem .2rem}
+html[data-fx=tet] button[data-p]::after{font-size:.5rem;padding:.75rem .45rem}}
+@keyframes tet-in{from{opacity:0}}
+@keyframes tet-fall{from{transform:translateY(-1.5rem)}}
+@keyframes tet-blink{50%{opacity:0}}
+@keyframes tet-clr{0%,28%{opacity:1;animation-timing-function:steps(1)}14%,42%{opacity:0;animation-timing-function:steps(1)}
+56%{opacity:1;clip-path:inset(0 0);animation-timing-function:steps(5)}82%{clip-path:inset(0 50%);height:var(--h);animation-timing-function:steps(3)}
+100%{clip-path:inset(0 50%);height:0}}
 @keyframes ash{to{transform:translate3d(220px,220px,0)}}
 @keyframes blackout{0%,94%,100%{opacity:0}94.5%{opacity:.25}95.2%{opacity:.05}96%{opacity:.18}96.8%{opacity:0}}
 @keyframes spinup{0%{opacity:.15}20%{opacity:.7}30%{opacity:.25}50%{opacity:.9}62%{opacity:.5}75%{opacity:1}}
@@ -1251,7 +1330,41 @@ html[data-fx=rust] button[data-p]{padding:.15rem .4rem}html[data-fx=rust] button
 @keyframes pulse{50%{opacity:.55}}
 @keyframes flap-top{to{transform:perspective(500px) rotateX(-90deg);filter:brightness(.5)}}
 @keyframes flap-bot{from{transform:perspective(500px) rotateX(90deg);filter:brightness(.5)}}
-@media (prefers-reduced-motion:reduce){html[data-fx] *,html[data-fx] *::after,html[data-fx]::after{animation:none!important}html[data-fx=flap] .fl,html[data-fx=rust]::before{display:none}}"""
+@media (prefers-reduced-motion:reduce){html[data-fx] *,html[data-fx] *::before,html[data-fx] *::after,html[data-fx]::after{animation:none!important}html[data-fx=flap] .fl,html[data-fx=rust]::before,html[data-fx=tet] .clr{display:none}}"""
+
+# Press Start 2P by CodeMan38 (SIL OFL 1.1), subset to printable ASCII, woff2.
+# Tetromino's pixel font, embedded so the page needs no network.
+PIXEL_FONT = """
+d09GMgABAAAAAAgsAAwAAAAAHGAAAAfaAAMAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHCoGYACBNhEICqwQn38BNgIkA4FGC4FGAAQg
+BYQKByAbsBRRlHDSGRD84YCbMHAdzBKxtMHaqHgt8UXF39tbbYSqKth13PljPPEPPFDxUETYsM3e10b8C4lGFocwrcomUS8MGNOF
+RKGakCiEQuHpfv9zn/e+meRn585LFlLOqSIShkBVLRWYhOmpkVWyTn1huldr28c8Em9I4v6OidZKpWTgk+7BYsVisVg7/HzmKz+S
+kTzwA8GTrmxkBxlyF4Ic2iKoJa35/fXQ3Oy4RJ8eTdgJWauWJr3VOyW9HOGHxBIghjbBBjSqd2739/YkVWk/3Yccfa93knPkGfAQ
+IrIRcpkgUyOEvYy1fC7sfhbOORfSooX0/j0BbQdocZavXF2H4ujB57dQ4wH//7yXVytz/gMfynmpAayET8w27PkH1LTbVjxwaW31
+Mn4xnY42nxV8Z7FUKR+UngpZQZgxh4shnr8fqsLlTvKJauh5+PiiUeeTp6z8Ypr6nmRHHf4fIXv4P3XRvzAjMA8sAIsAxGU5aRUt
+HXk0RlRVUllGUUJBQ01dVhsphtJT0ofrIjRh+H8DYB/gJbgDqD9B4xIAhgBQGCroWLmyKbQMJCI5fjxqtAwJUvzojPAFIOcHUm0R
+Rhr+i8uwS/cpu4ydmbm3Hcf08L7z5XbqcufOfYs7e0/P8N4Xkb0fGbEz+ij2+bnHjMXOu3Hj2OU0LbZhsX8Wt191PrkX71rUHZ2Y
+DC9U3SIwcCpqOlAt0P5LC5ztv2H6R9mIYoWoGkxYj8FAZDZAAqY97THdufYfNRmf31kEZUddUCW+6GGHsmBwtgSFKg2wQ0q0mgEZ
+aXOwlkkq1dSGcT01wWuMqiCbJNSaPNAZEaQipEhluzlwrRGoIUiwDatJFCpIFU0APU6jBfEbH/aazAQOVlRZ/sooktxHRtfFoG5Q
+4O+bnp9VJPU6oXh8h63csFKPsuKpXf+pfpQwhKwMh5QZuGHKMQg+d2kIDJfKPIURklv6qBKZorpFCpCVXILErdY61Iyc1NsRnnwd
+KpjiGO5YNpV9GUQBu1jtW4ZWWVEjSE7VURnkYjTDeDBLOEuBElu/DJ5vlMZaBDT1e6ooc6IMqS5UdVWsDfF0QIGWZlEn8+AMV1Hr
+mIMu9dG94ZUQJRpVZEhODEWjvIBRfNTnpf6IFje51sEEdDiVuObISkUmieilgY6ccP47jtIGNzvWXXSN0mn5vmWOovr8pWawk6QM
+rjIlEml0udN7OgyEsKbSmyVWiV3TU5PCJudh3cQsvdCvSxwOiW8naEpo9emyl8eqvE/iJVrEhJigC+NsuFMS+EWSjbRbFO6x68Ly
++K1aSax1ssEuqCgqmIiOGbe6RuGWhcvuJ3Kv3AiRSD+ORqputS5EG9aES/f2POVPcq026F43jfqMs+tbt/KltrQstUAZallCM0MZ
+D60pmUSKjpsdxg2I2IKjGrm6QfRCFQ1ikM+lI/I5G/n0iSus+g52eL+CTp0igcen04EtwL1EdoGe0Wt5uyLr8vA5pbcKVdYDOuSQ
+5rLSbyNnPyMrHgUdQJJHM7X3ZvkqxBsFibdcFE5blsyUYG0wMM85srIubi/Tw9FGEXLpPlFLq+f8XrAW6WGcjPpjViezCFI1rsuS
+HBSNbpxmA10GQ7S9YYHG285oTQ2N7uU98xdTtTyqD5lJJhrTs040/e7TSl0QS95YXlc8rZEItlGaVd5lXp1M63i03NKvLGf2o01R
+vTPV24W2N2j6SR2LFsKz+WYAkIi2PMi51A7nJ7ZEtYzcAzkkjLx4WL+h6GYzM2HeFjoNqNKyi8oVRIRSSRfvEq933uYE/6rhlFBU
+jzEgjPEEDAOGnbAtG1bCf348mvhyYc4vFmhMfLMwPy00oIRgeVwdHHW9qRy2URdB7qMTlOMnazTLLIfF3uBqsFyaPlmzX2fqvayY
+rhGxsTWhPdg5wzN4LVrVOIvtuyotxL0dFLrzc+kEWcnQP4gLqXUnhX+luE4sRN6D/gNzOzsqPVVcjbcrS14vKiURh8yNKSp1GVv+
+jojTHu8CY07VolzeotRWbpPu9FqBwVeCP4GYSEvEG5WqC1jUiwrYUMeuvGc6cPc5qs4RdJbSoy+UAvShTfExcxZ80C9u2d6xl8bs
++w2MmSnhe3HedYhkfpSuDT9itC74Uj+YuojoVxaWAKHUZXXWjT+pZp3Yu18Eizi2xYycOZpsu73m4Yvw5llxzkf+njmafNXwn+jD
+JqrRJpJmSzR+T6vrXll1jaBAJIuHk8X5HeZPfC2YVfoeZfa9XcWDfvRnC2zeC9RnkoqICd67AyFinS/+jKT/TvKck5LRvUAVSbwF
+8CatEaxj5+3Z1cOgPMsr+tfVgAebrL/kBPB+JKACn/ncG07978zmwOsP2gr718j/kHyobShi4Aj2sjiWNPHDVKJ17Tb5bJBIYhF7
+J5kNiaiEXscXA6aEnqEpEANuDTJagZzhnW/A/tQ+L5l9hGihpjWPvomL1QXAW8CyaPLPKnpbWeZMPMsdy4Wsxu68/TmtQ/mNhK2d
+u4O5qZkTxM7Kxg5hCTb2SIdQHYGHMNyavoMgQrK8rUWrh6QXcw7V7EcfhJ7WEBs4chf1cEU3xhy8zA860TFCrubiKoRO2TF2cOnU
+iNDpHim6cH1rbUetGfaHhURdU2crssvBzAo6AhLqvUohMs6+Di6ZqV24RfNJVMWxg57ndQhScGCSGi5vR//37AAAAA==
+"""
+FX_CSS = FX_CSS.replace("__PIXELFONT__", "".join(PIXEL_FONT.split()))
 
 PAGE_TMPL = """<!DOCTYPE html><html><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
@@ -1285,7 +1398,7 @@ border-radius:3px;vertical-align:middle;margin-left:.35rem;overflow:hidden}
 border:2px solid transparent;display:inline-block}
 #theme span.sel{border-color:var(--fg)}
 __FX__</style></head><body>
-<h1 data-host="__HOST__">PinePorts — what's running on __HOST__</h1>
+<h1 data-host="__HOST__" data-lines="0">PinePorts — what's running on __HOST__</h1>
 <div id=stats></div>
 <div id=theme></div>
 <table id=t><thead><tr>
@@ -1302,6 +1415,7 @@ function applyTheme(t){theme=t;try{localStorage.setItem('pp_theme',t)}catch(e){}
 function meter(pct){const cls=pct>90?'crit':pct>75?'warn':'';
  return `<span class="meter ${cls}"><i style="width:${Math.min(pct,100)}%"></i></span>`}
 let cells={};  /* last {text, html} per pid+column, so the flap skin flips only what changed */
+let lines=0;   /* rows the tetromino skin has cleared this visit */
 async function refresh(){
  const h=document.documentElement;h.classList.add('io');setTimeout(()=>h.classList.remove('io'),200);
  const r=await fetch('/api/services');const d=await r.json();
@@ -1312,21 +1426,31 @@ async function refresh(){
   `<span>DISK <b>${st.disk_pct}%</b>${meter(st.disk_pct)}</span>`+
   `<span>free <b>${st.disk_free}G</b></span>`+
   `<span>load <b>${st.load1}</b></span><span>up <b>${st.uptime}</b></span>`;
- const tb=document.querySelector('#t tbody'),was=cells;tb.innerHTML='';cells={};
+ const tb=document.querySelector('#t tbody'),was=cells,fx=h.dataset.fx;
+ /* tetromino: remember each row's pid and height so a vanished one can clear */
+ const old=fx==='tet'?[...tb.rows].map(r=>[r.dataset.pid,r.offsetHeight]):[];
+ tb.innerHTML='';cells={};let fresh=0;
  d.services.forEach(s=>{
-  const tr=document.createElement('tr');
+  const tr=document.createElement('tr');tr.dataset.pid=s.pid;
+  if(fx==='tet'&&!was[s.pid+'.0']){tr.className='drop';tr.style.setProperty('--r',fresh++)}
   const sys=own.some(o=>s.name.includes(o));
   const ports=s.ports.map(p=>{
    const t=(s.links||[]).includes(p)?`<a href="http://${location.hostname}:${p}/" target=_blank rel=noopener>${p}</a>`:p;
    return s.new&&s.new.includes(p)?t+'<span class="badge">new</span>':t}).join(', ');
   tr.innerHTML=`<td title="${esc('pid '+s.pid+(s.cmd?'\\n'+s.cmd:''))}">${esc(s.name)}</td><td class=mem>${s.rss?s.rss.toFixed(0)+' MB':'-'}</td>
    <td>${ports}</td><td>${sys?'':'<button data-p="'+s.ports[0]+'" data-pid="'+s.pid+'" data-n="'+esc(s.name+' (pid '+s.pid+')')+'">kill</button>'}</td>`;
-  const flap=document.documentElement.dataset.fx==='flap';
+  const flap=fx==='flap';
   [...tr.cells].forEach((td,i)=>{const k=s.pid+'.'+i,o=was[k]||{t:'',h:''},h=td.innerHTML;
    cells[k]={t:td.textContent,h};
    if(flap&&o.t!==cells[k].t)td.insertAdjacentHTML('beforeend',
     `<div class="fl fl-ob"><span>${o.h}</span></div><div class="fl fl-ot"><span>${o.h}</span></div><div class="fl fl-nb"><span>${h}</span></div>`)});
   tb.appendChild(tr);});
+ const live=new Set(d.services.map(s=>String(s.pid)));
+ old.forEach(([pid,ht],i)=>{if(!pid||live.has(pid))return;
+  const tr=document.createElement('tr');tr.className='clr';
+  tr.innerHTML=`<td colspan=4><div style="--h:${ht}px"></div></td>`;
+  tr.addEventListener('animationend',()=>tr.remove());
+  tb.insertBefore(tr,tb.rows[i]||null);document.querySelector('h1').dataset.lines=++lines;});
  document.querySelector('#msg').textContent=d.services.length+' services, '
   +(d.total/1024).toFixed(1)+' GB RAM — updated '+new Date().toLocaleTimeString();
 }
