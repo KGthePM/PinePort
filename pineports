@@ -1574,10 +1574,15 @@ border-radius:3px;vertical-align:middle;margin-left:.35rem;overflow:hidden}
 #theme span{width:1.15rem;height:1.15rem;border-radius:50%;cursor:pointer;
 border:2px solid transparent;display:inline-block}
 #theme span.sel{border-color:var(--fg)}
+#addons-top{margin:0 0 1.2rem}#addons-top:empty{display:none}
+.card[hidden],#t[hidden]{display:none!important}
+.fold::before{content:attr(data-f) " ";font-size:.75em}
 __FX__</style></head><body>
 <h1 data-host="__HOST__" data-lines="0">PinePorts — what's running on __HOST__</h1>
 <div id=stats></div>
 <div id=theme></div>
+<div id=addons-top></div>
+<h2 style="font-size:.95rem;color:var(--accent);margin:0 0 .4rem"><span class=fold id=svc-fold style="cursor:pointer">Services</span></h2>
 <table id=t><thead><tr>
 <th>SERVICE</th><th class=mem>MEM</th><th>PORTS</th><th></th></tr></thead>
 <tbody></tbody></table><div id=msg></div>
@@ -1634,6 +1639,12 @@ async function refresh(){
  document.querySelector('#msg').textContent=d.services.length+' services, '
   +(d.total/1024).toFixed(1)+' GB RAM — updated '+new Date().toLocaleTimeString();
 }
+/* tap a section title to fold it; remembered per device */
+function foldable(lbl,body,key){
+ const fold=f=>{body.hidden=f;lbl.dataset.f=f?'▸':'▾';try{localStorage.setItem(key,f?'1':'')}catch(e){}};
+ let f0=false;try{f0=!!localStorage.getItem(key)}catch(e){}
+ fold(f0);lbl.onclick=()=>fold(!body.hidden);}
+foldable(document.querySelector('#svc-fold'),document.querySelector('#t'),'pp_fold_services');
 /* build theme dots */
 const tdiv=document.querySelector('#theme');
 for(const t of['auto',...Object.keys(THEMES)]){const el=document.createElement('span');
@@ -1679,13 +1690,16 @@ async function loadAddon(name,live){
    document.querySelector('#addon-'+name+' .card'),await r.json());}
  catch(e){document.querySelector('#addon-'+name+' .card').textContent='error: '+(e&&e.message?e.message:e)}
  if(btn){btn.disabled=false;btn.textContent='refresh';}}
+/* AI usage is checked often, so it sits above the long services table;
+   other add-ons stay below it. */
 for(const name of ADDONS){
- const wrap=document.createElement('div');wrap.id='addon-'+name;
- wrap.innerHTML=`<h2 style="font-size:.95rem;color:var(--accent);margin:1.6rem 0 .4rem">${name==='needle'?'AI usage':name}
+ const top=name==='needle',wrap=document.createElement('div');wrap.id='addon-'+name;
+ wrap.innerHTML=`<h2 style="font-size:.95rem;color:var(--accent);margin:${top?'0 0 .4rem':'1.6rem 0 .4rem'}"><span class=fold style="cursor:pointer">${top?'AI usage':name}</span>
   <button style="background:var(--killbg);color:var(--accent);border-color:var(--accent);font-size:.75rem;padding:.1rem .5rem">refresh</button></h2>
   <div class=card style="font-size:.85rem"></div>`;
+ foldable(wrap.querySelector('.fold'),wrap.querySelector('.card'),'pp_fold_'+name);
  wrap.querySelector('button').onclick=()=>loadAddon(name,true);
- document.querySelector('#addons').appendChild(wrap);
+ document.querySelector(top?'#addons-top':'#addons').appendChild(wrap);
  loadAddon(name,false);}
 document.addEventListener('click',async e=>{
  const b=e.target.closest('button[data-p]');if(!b)return;
