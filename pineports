@@ -19,7 +19,7 @@ except ImportError:
 # Windows keeps the same filenames under %APPDATA%\pineports\; Linux keeps
 # ~/.config/ as before. One base dir, computed once.
 IS_WIN = sys.platform == "win32"
-VERSION = "0.8.0"
+VERSION = "0.8.2"
 
 def CONFIG_PATH(fname):
     base = (os.path.join(os.environ.get("APPDATA", os.path.expanduser("~")),
@@ -82,6 +82,11 @@ def _find_addons():
         a["docker"] = {"cmd": pdock, "cached": [], "live": [],
                         "timeout": (10, 10)}  # local socket, always fast
     pgpu = _addon_cmd("pineports-gpu")
+    if not pgpu and IS_WIN:
+        bundled = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                               "pineports-gpu")
+        if os.path.isfile(bundled):
+            pgpu = [sys.executable, bundled]
     if pgpu:
         a["gpu"] = {"cmd": pgpu, "cached": ["--cached"], "live": [],
                     "timeout": (10, 10)}  # nvidia-smi is a local driver call
@@ -1905,7 +1910,7 @@ async function refresh(){
  const h=document.documentElement;h.classList.add('io');setTimeout(()=>h.classList.remove('io'),200);
  const r=await fetch('/api/services');const d=await r.json();
  const st=d.stats,sb=document.querySelector('#stats');
- const prev=[...sb.querySelectorAll('.meter i')].map(i=>i.style.width);
+ const prev=[...sb.querySelectorAll('.meter i')].filter(i=>!i.closest('.gpu-chip')).map(i=>i.style.width);
  /* stats and rows are rebuilt every poll: a negative delay picks looping skin
     animations up where a shared clock says they are, instead of restarting */
  const ph=-(performance.now()%315000)/1000+'s';sb.style.setProperty('--ph',ph);
@@ -1951,6 +1956,7 @@ async function refresh(){
   tb.insertBefore(tr,tb.rows[i]||null);document.querySelector('h1').dataset.lines=++lines;});
  document.querySelector('#msg').textContent=d.services.length+' services, '
   +(d.total/1024).toFixed(1)+' GB RAM — updated '+new Date().toLocaleTimeString();
+ loadGpu();
 }
 /* tap a section title to fold it; remembered per device */
 function foldable(lbl,body,key){
@@ -2004,21 +2010,7 @@ docker:(box,d)=>{
  if(!d.containers||!d.containers.length){box.innerHTML='<span style="color:var(--dim)">no containers running</span>';return}
  box.innerHTML=d.containers.map(c=>`<div style="margin:.3rem 0"><b>${esc(c.Name)}</b>`
   +` <span style="color:var(--dim)">${esc(c.CPUPerc)} CPU · ${esc(c.MemUsage)}`
-  +`${c.State&&c.State!=='running'?' · <span style="color:var(--kill)">'+esc(c.State)+'</span>':''}</span></div>`).join('');},
-gpu:(box,d)=>{
- if(d.error){box.innerHTML=`<span style="color:var(--kill)">${esc(d.error)}</span>`;return}
- if(!d.gpus||!d.gpus.length){box.innerHTML='<span style="color:var(--dim)">no NVIDIA GPUs found</span>';return}
- const n=(v,suf)=>v==null?'—':(Math.round(v*10)/10)+suf;
- box.innerHTML=d.gpus.map(g=>{
-  const pct=g.mem_total?Math.min(g.mem_used/g.mem_total*100,100):null;
-  return`<div style="margin:.3rem 0"><b>${esc(g.name)}</b>`+
-   `<div style="padding-left:1rem;color:var(--dim)">VRAM ${n(g.mem_used,'/')+n(g.mem_total,' MiB')}`+
-   (pct!=null?` <b style="color:var(--fg)">(${pct.toFixed(0)}%)</b>${meter(pct)}`:'')+`</div>`+
-   `<div style="padding-left:1rem;color:var(--dim)">Util ${n(g.util,'%')} · Temp ${n(g.temp,'°C')}`+
-   (g.power_draw!=null?` · Power ${n(g.power_draw,'W')}${g.power_limit?' / '+n(g.power_limit,'W'):''}`:'')+
-   (g.fan!=null?` · Fan ${n(g.fan,'%')}`:'')+`</div></div>`}).join('')
- +`<div style="color:var(--dim);font-size:.75rem;margin-top:.3rem">${d._live?'live':'cached'} `
- +(d.updated?new Date(d.updated*1000).toLocaleTimeString():'')+'</div>';}};
+  +`${c.State&&c.State!=='running'?' · <span style="color:var(--kill)">'+esc(c.State)+'</span>':''}</span></div>`).join('');}};
 async function loadAddon(name,live){
  const btn=document.querySelector('#addon-'+name+' button');
  if(btn){btn.disabled=true;btn.textContent=live?'…':'refresh';}
@@ -2027,12 +2019,35 @@ async function loadAddon(name,live){
    document.querySelector('#addon-'+name+' .card'),await r.json());}
  catch(e){document.querySelector('#addon-'+name+' .card').textContent='error: '+(e&&e.message?e.message:e)}
  if(btn){btn.disabled=false;btn.textContent='refresh';}}
+/* GPU readings are machine stats like CPU/RAM, so they render as
+   chips at the end of the stats bar instead of a card; refreshed on
+   the same 5s poll (nvidia-smi is a cheap local driver call). */
+let gpuData=null;
+function gpuChip(d){
+ if(!d||!Array.isArray(d.gpus)||!d.gpus.length)return'';
+ const many=d.gpus.length>1;
+ return d.gpus.map(g=>{
+  const vpct=(g.mem_used!=null&&g.mem_total)?Math.min(g.mem_used/g.mem_total*100,100):null;
+  return`<span class=gpu-chip>GPU${many?g.index+1:''} `
+   +(g.util!=null?`<b style="--w:3">${Math.round(g.util)}%</b>${meter(g.util)} · `:'')
+   +(g.temp!=null?`${Math.round(g.temp)}°C · `:'')
+   +(g.mem_used!=null&&g.mem_total!=null?`<b style="--w:9">${(g.mem_used/1024).toFixed(1)}/${(g.mem_total/1024).toFixed(0)}G</b> `
+    +(vpct!=null?`<b style="--w:3">${Math.round(vpct)}%</b>${meter(vpct)}`:''):'')
+   +'</span>'}).join('')}
+async function loadGpu(){
+ if(!ADDONS.includes('gpu'))return;
+ try{const r=await fetch('/api/addon/gpu');gpuData=await r.json()}catch(e){gpuData=null}
+ const sb=document.querySelector('#stats'),html=gpuChip(gpuData),
+  els=[...sb.querySelectorAll('.gpu-chip')];
+ if(els.map(e=>e.outerHTML).join('')===html)return;
+ els.forEach(el=>el.remove());
+ if(html)sb.insertAdjacentHTML('beforeend',html);}
 /* AI usage and Docker are checked often, so they sit above the long
-   services table; other add-ons stay below it. Needle is pinned first
-   (its margin assumes it leads); the server sends the rest sorted. */
+   services table; GPU lives in the stats bar (loadGpu). Needle is pinned
+   first (its margin assumes it leads); the server sends the rest sorted. */
 const TOP_ORDER=['needle','docker'];
 for(const name of [...TOP_ORDER.filter(n=>ADDONS.includes(n)),
-                    ...ADDONS.filter(n=>!TOP_ORDER.includes(n))]){
+                    ...ADDONS.filter(n=>!TOP_ORDER.includes(n)&&n!=='gpu')]){
  const top=TOP_ORDER.includes(name),wrap=document.createElement('div');wrap.id='addon-'+name;
  wrap.innerHTML=`<h2 style="font-size:.95rem;color:var(--accent);margin:${name==='needle'?'0 0 .4rem':top?'.6rem 0 .4rem':'1.6rem 0 .4rem'}"><span class=fold style="cursor:pointer">${name==='needle'?'AI usage':name}</span>
   <button style="background:var(--killbg);color:var(--accent);border-color:var(--accent);font-size:.75rem;padding:.1rem .5rem">refresh</button></h2>

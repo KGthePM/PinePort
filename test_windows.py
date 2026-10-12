@@ -56,6 +56,14 @@ class WinSmoke(unittest.TestCase):
         else:
             self.assertTrue(os.path.basename(cmd).startswith("pineports-docker"))
 
+    def test_bundled_gpu_addon_is_registered(self):
+        self.assertIn("gpu", pp.ADDONS)
+        cmd = pp.ADDONS["gpu"]["cmd"]
+        if isinstance(cmd, list):
+            self.assertEqual(cmd[0], sys.executable)
+        else:
+            self.assertTrue(os.path.basename(cmd).startswith("pineports-gpu"))
+
     def test_sys_stats_values(self):
         st = pp.sys_stats()
         for k in ("ram_pct", "ram_used", "ram_total", "cpu_pct", "disk_pct",
