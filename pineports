@@ -19,7 +19,7 @@ except ImportError:
 # Windows keeps the same filenames under %APPDATA%\pineports\; Linux keeps
 # ~/.config/ as before. One base dir, computed once.
 IS_WIN = sys.platform == "win32"
-VERSION = "0.8.2"
+VERSION = "0.8.5"
 
 def CONFIG_PATH(fname):
     base = (os.path.join(os.environ.get("APPDATA", os.path.expanduser("~")),
@@ -1309,18 +1309,14 @@ html[data-fx=flap] body:has(#pin) h1::after{content:'GATE CLOSED\\A' attr(data-h
 html[data-fx=flap] #pin{font-size:1.6rem;font-weight:700;border:0;border-radius:3px;background:var(--hinge),var(--tile);color:var(--accent)}
 html[data-fx=flap] body:has(#pin) button{font-size:0;border-radius:0;background:#ffc61a;border-color:#ffc61a}
 html[data-fx=flap] body:has(#pin) button::after{content:'BOARD';font-size:.9rem;color:#0b0b0b;letter-spacing:.15em}
-/* Wasteland: a riveted, rusting steel plate in a dark room. Two ambient layers
-   on <html>, both compositor-only (transform/opacity): ash drifting down, and a
-   blackout overlay that dims briefly every ~17s like a failing
-   generator. Each poll flickers the rows; new ports glow radiation green as
-   SIGNAL, kill reads SCRAP. Noise is one tiny SVG tile, rasterised once. */
+/* Wasteland: a riveted, rusting steel plate in a dark room. One ambient layer
+   on <html>, compositor-only (opacity): a blackout that dims briefly every
+   ~17s like a failing generator. New ports glow radiation green as SIGNAL,
+   kill reads SCRAP. Noise is one tiny SVG tile, rasterised once. */
 html[data-fx=rust]{--noise:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.75' numOctaves='3'/%3E%3CfeColorMatrix values='0 0 0 0 .1 0 0 0 0 .04 0 0 0 0 .02 1.3 0 0 0 -.5'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
 --hazard:repeating-linear-gradient(-45deg,#d9a21b 0 .45rem,#151010 .45rem .9rem);--rivet:#9a6a52 0 .2rem,#2a1712 .26rem,transparent .3rem;
 background:#070403 radial-gradient(ellipse at 50% 30%,#1f1410,#070403 75%);min-height:100%}
-html[data-fx=rust]::before{content:'';position:fixed;inset:-220px 0 0 -220px;pointer-events:none;z-index:9;opacity:.3;
-background-image:radial-gradient(circle at 20% 30%,#cbbba2 0 1px,transparent 1.6px),radial-gradient(circle at 72% 58%,#cbbba2 0 1px,transparent 1.6px),
-radial-gradient(circle at 45% 88%,#8a7a66 0 1.3px,transparent 1.9px);background-size:220px 220px;animation:ash 60s linear infinite}
-html[data-fx=rust]::after{content:'';position:fixed;inset:0;pointer-events:none;z-index:10;background:#000;opacity:0;animation:blackout 17s infinite}
+html[data-fx=rust]::after{content:'';position:fixed;inset:0;pointer-events:none;z-index:10;background:#000;opacity:0;will-change:opacity;animation:blackout 17s infinite}
 html[data-fx=rust] body{box-sizing:border-box;margin:1.2rem auto 2rem;padding:1.5rem 1.4rem 1.3rem;text-transform:uppercase;
 background:radial-gradient(circle at .75rem .75rem,var(--rivet)),radial-gradient(circle at calc(100% - .75rem) .75rem,var(--rivet)),
 radial-gradient(circle at .75rem calc(100% - .75rem),var(--rivet)),radial-gradient(circle at calc(100% - .75rem) calc(100% - .75rem),var(--rivet)),
@@ -1340,7 +1336,6 @@ html[data-fx=rust] th:nth-child(2)::after{content:'MEM'}html[data-fx=rust] th:nt
 html[data-fx=rust] th:nth-child(4)::after{content:''}
 html[data-fx=rust] td{border-bottom:1px dashed var(--line);letter-spacing:.05em}html[data-fx=rust] .mem{white-space:nowrap}
 html[data-fx=rust] tr:hover td{background:rgba(208,100,58,.07)}
-html[data-fx=rust].io tbody{animation:flicker .2s linear}
 html[data-fx=rust] a{text-decoration:none;border-bottom:1px dotted}
 html[data-fx=rust] .badge{font-size:0;background:none;padding:0;border-radius:0}
 html[data-fx=rust] .badge::after{content:'\\2622\\FE0E SIGNAL';font-size:.68rem;font-weight:700;letter-spacing:.1em;color:#9cff3a;margin-left:.4em;
@@ -1446,7 +1441,7 @@ html[data-fx=tet] button[data-p]::after{font-size:.5rem;padding:.75rem .45rem}}
 html[data-fx=neon]{--cy:#3ce8ff;--vi:#b26bff;--hz:62vh;--sans:Eurostile,Microgramma,"Bank Gothic",Michroma,system-ui,-apple-system,"Segoe UI",sans-serif;
 --chamf:polygon(.4rem 0,100% 0,100% calc(100% - .4rem),calc(100% - .4rem) 100%,0 100%,0 .4rem);
 --brk:linear-gradient(var(--cy) 0 0);background:#05061a;min-height:100%}
-html[data-fx=neon]::before{content:'';position:fixed;left:-75vw;width:250vw;top:calc(var(--hz) - 700px);height:980px;z-index:-2;pointer-events:none;
+html[data-fx=neon]::before{content:'';position:fixed;left:-75vw;width:250vw;top:calc(var(--hz) - 700px);height:980px;z-index:-2;pointer-events:none;will-change:transform;
 transform-origin:50% 700px;transform:perspective(300px) translateY(120px) rotateX(90deg) translateY(0);
 background:linear-gradient(90deg,rgba(178,107,255,.75) 2px,transparent 2px) 50% 0/40px 40px,linear-gradient(rgba(178,107,255,.75) 2px,transparent 2px) 0 0/40px 40px;
 animation:grid-run 4s linear infinite}
@@ -1528,7 +1523,7 @@ radial-gradient(1.5px 1.5px at 88px 133px,#fff,transparent),radial-gradient(1px 
 radial-gradient(1px 1px at 12px 189px,#c9ffb0,transparent),
 linear-gradient(#0c0716,#150b2a 60%,#0a1410)}
 html[data-fx=ufo]{background-size:auto,auto,auto,auto,197px 211px,197px 211px,197px 211px,197px 211px,197px 211px,auto}
-html[data-fx=ufo]::before{content:'';position:fixed;inset:0;z-index:-2;pointer-events:none;background:
+html[data-fx=ufo]::before{content:'';position:fixed;inset:0;z-index:-2;pointer-events:none;will-change:opacity;background:
 radial-gradient(1.5px 1.5px at 64px 92px,#fff,transparent),radial-gradient(1px 1px at 201px 37px,#fff,transparent),
 radial-gradient(2px 2px at 150px 240px,#e6dcff,transparent),radial-gradient(1px 1px at 22px 263px,#fff,transparent);
 background-size:263px 293px;animation:twinkle 5s ease-in-out infinite alternate}
@@ -1557,9 +1552,10 @@ html[data-fx=ufo] td:first-child{overflow-wrap:break-word;font-weight:600}html[d
 html[data-fx=ufo] tbody tr:hover td{background:rgba(141,255,90,.06)}
 html[data-fx=ufo] a{text-decoration:none;border-bottom:1px dotted rgba(141,255,90,.5)}
 html[data-fx=ufo] tr.drop td{animation:ufo-in .7s ease-out calc(min(var(--r),12)*60ms) both}
-html[data-fx=ufo] .badge{font-size:0;padding:0;margin-left:.3rem;background:none;vertical-align:.05rem;white-space:nowrap}
-html[data-fx=ufo] .badge::before{content:'';display:inline-block;width:.38rem;height:.38rem;border-radius:50%;vertical-align:.05rem;
-background:var(--warn);animation:ping 2s ease-out var(--ph,0s) infinite}
+html[data-fx=ufo] .badge{font-size:0;padding:0;margin-left:.3rem;vertical-align:.05rem;white-space:nowrap;
+background:radial-gradient(circle,var(--warn) 0 52%,transparent 58%) 0 50%/.38rem .38rem no-repeat}
+html[data-fx=ufo] .badge::before{content:'';display:inline-block;box-sizing:border-box;width:.38rem;height:.38rem;border-radius:50%;vertical-align:.05rem;
+border:1px solid var(--warn);animation:ping 2s ease-out var(--ph,0s) infinite}
 html[data-fx=ufo] .badge::after{content:'NEW';margin-left:.22rem;font:700 .56rem/1 var(--rnd);letter-spacing:.1em;color:var(--warn)}
 html[data-fx=ufo] button{font-family:var(--rnd);border-radius:999px;-webkit-tap-highlight-color:transparent}
 html[data-fx=ufo] button[data-p]{font-size:0;padding:.3rem .7rem;white-space:nowrap;background:rgba(255,92,154,.1)}
@@ -1600,7 +1596,7 @@ html[data-fx=wax]{--or:#ff8a3d;--glass:rgba(34,10,28,.82);--edge:rgba(255,138,61
 --rnd:ui-rounded,"SF Pro Rounded","Arial Rounded MT Bold","Varela Round",system-ui,-apple-system,"Segoe UI",sans-serif;
 background-color:#1a0814;min-height:100%;background-image:
 radial-gradient(120% 40% at 50% 100%,rgba(255,110,40,.26),transparent 70%),linear-gradient(#1a0814,#260a1d 55%,#33101c)}
-html[data-fx=wax]::before,html[data-fx=wax]::after{content:'';position:fixed;bottom:0;z-index:-1;pointer-events:none;
+html[data-fx=wax]::before,html[data-fx=wax]::after{content:'';position:fixed;bottom:0;z-index:-1;pointer-events:none;will-change:transform;
 aspect-ratio:1/1.15;border-radius:48% 52% 44% 56%/56% 46% 54% 44%;opacity:calc(.3 + var(--heat)*.45);transition:width 4s,opacity 4s}
 html[data-fx=wax]::before{left:4%;width:calc(8rem + var(--heat)*8rem);background:radial-gradient(circle at 38% 32%,#ffc07a,#ff8a3d 45%,#e8336f);
 box-shadow:0 0 40px rgba(255,138,61,.35);animation:wax-rise 38s ease-in-out -6s infinite}
@@ -1775,7 +1771,7 @@ html[data-fx=felt] button[data-p]{padding:.3rem .5rem}html[data-fx=felt] button[
 @keyframes twinkle{from{opacity:.25}to{opacity:1}}
 @keyframes fly{0%{transform:translate(-120px,1.2rem) rotate(-4deg)}5%{transform:translate(25vw,.4rem) rotate(3deg)}
 10%{transform:translate(50vw,1.4rem) rotate(-3deg)}15%{transform:translate(75vw,.3rem) rotate(4deg)}20%,100%{transform:translate(calc(100vw + 40px),1rem) rotate(-2deg)}}
-@keyframes ping{0%{box-shadow:0 0 0 0 rgba(255,212,71,.7)}70%,100%{box-shadow:0 0 0 .4rem rgba(255,212,71,0)}}
+@keyframes ping{0%{transform:scale(1);opacity:.7}70%,100%{transform:scale(2.6);opacity:0}}
 @keyframes ufo-in{0%{opacity:0;background:rgba(141,255,90,.35)}40%{opacity:1;background:rgba(141,255,90,.25)}}
 @keyframes ufo-gone{0%,75%{height:var(--h)}100%{height:0}}
 @keyframes beam{0%{opacity:0;transform:scaleY(0)}18%{opacity:1;transform:scaleY(1)}62%{opacity:1;transform:scaleY(1)}80%,100%{opacity:0;transform:scaleY(0)}}
@@ -1790,14 +1786,12 @@ html[data-fx=felt] button[data-p]{padding:.3rem .5rem}html[data-fx=felt] button[
 @keyframes tet-clr{0%,28%{opacity:1;animation-timing-function:steps(1)}14%,42%{opacity:0;animation-timing-function:steps(1)}
 56%{opacity:1;clip-path:inset(0 0);animation-timing-function:steps(5)}82%{clip-path:inset(0 50%);height:var(--h);animation-timing-function:steps(3)}
 100%{clip-path:inset(0 50%);height:0}}
-@keyframes ash{to{transform:translate3d(220px,220px,0)}}
 @keyframes blackout{0%,94%,100%{opacity:0}94.5%{opacity:.25}95.2%{opacity:.05}96%{opacity:.18}96.8%{opacity:0}}
 @keyframes spinup{0%{opacity:.15}20%{opacity:.7}30%{opacity:.25}50%{opacity:.9}62%{opacity:.5}75%{opacity:1}}
-@keyframes flicker{0%{opacity:1}35%{opacity:.82}100%{opacity:1}}
 @keyframes pulse{50%{opacity:.55}}
 @keyframes flap-top{to{transform:perspective(500px) rotateX(-90deg);filter:brightness(.5)}}
 @keyframes flap-bot{from{transform:perspective(500px) rotateX(90deg);filter:brightness(.5)}}
-@media (prefers-reduced-motion:reduce){html[data-fx] *,html[data-fx] *::before,html[data-fx] *::after,html[data-fx]::before,html[data-fx]::after{animation:none!important}html[data-fx=flap] .fl,html[data-fx=rust]::before,html[data-fx=tet] .clr,html[data-fx=ufo] .clr,html[data-fx=ufo]::after,html[data-fx=wax] .clr,html[data-fx=felt] .clr,html[data-fx=felt] tr.drop td:first-child::after{display:none}html[data-fx=wax] .meter i{transition:none}}"""
+@media (prefers-reduced-motion:reduce){html[data-fx] *,html[data-fx] *::before,html[data-fx] *::after,html[data-fx]::before,html[data-fx]::after{animation:none!important}html[data-fx=flap] .fl,html[data-fx=tet] .clr,html[data-fx=ufo] .clr,html[data-fx=ufo]::after,html[data-fx=wax] .clr,html[data-fx=felt] .clr,html[data-fx=felt] tr.drop td:first-child::after{display:none}html[data-fx=wax] .meter i{transition:none}}"""
 
 # Press Start 2P by CodeMan38 (SIL OFL 1.1), subset to printable ASCII, woff2.
 # Tetromino's pixel font, embedded so the page needs no network.
@@ -1910,7 +1904,8 @@ async function refresh(){
  const h=document.documentElement;h.classList.add('io');setTimeout(()=>h.classList.remove('io'),200);
  const r=await fetch('/api/services');const d=await r.json();
  const st=d.stats,sb=document.querySelector('#stats');
- const prev=[...sb.querySelectorAll('.meter i')].filter(i=>!i.closest('.gpu-chip')).map(i=>i.style.width);
+ const gpuEls=[...sb.querySelectorAll('.gpu-chip')],
+  prev=[...sb.querySelectorAll('.meter i')].filter(i=>!i.closest('.gpu-chip')).map(i=>i.style.width);
  /* stats and rows are rebuilt every poll: a negative delay picks looping skin
     animations up where a shared clock says they are, instead of restarting */
  const ph=-(performance.now()%315000)/1000+'s';sb.style.setProperty('--ph',ph);
@@ -1926,6 +1921,9 @@ async function refresh(){
  const mi=[...sb.querySelectorAll('.meter i')];
  if(prev.length===mi.length){const to=mi.map(i=>i.style.width);mi.forEach((i,k)=>i.style.width=prev[k]);
   sb.offsetWidth;mi.forEach((i,k)=>i.style.width=to[k])}
+ /* put the GPU chips back only after the width check above, so mi stays
+    the rebuilt stats' meters; re-appending in the same paint means no flash */
+ gpuEls.forEach(el=>sb.appendChild(el));
  h.style.setProperty('--heat',Math.min(st.cpu_pct,100)/100);  /* molten's wax blobs swell with CPU */
  const tb=document.querySelector('#t tbody'),was=cells,fx=h.dataset.fx,gone=fx==='tet'||fx==='ufo'||fx==='wax'||fx==='felt';
  /* tetromino/saucer/molten/felt: remember each row's pid and height so a vanished one can clear */
@@ -2022,7 +2020,7 @@ async function loadAddon(name,live){
 /* GPU readings are machine stats like CPU/RAM, so they render as
    chips at the end of the stats bar instead of a card; refreshed on
    the same 5s poll (nvidia-smi is a cheap local driver call). */
-let gpuData=null;
+let gpuData=null,gpuHtml=null; /* last rendered chip html, so an unchanged reading never touches the DOM */
 function gpuChip(d){
  if(!d||!Array.isArray(d.gpus)||!d.gpus.length)return'';
  const many=d.gpus.length>1;
@@ -2036,12 +2034,15 @@ function gpuChip(d){
    +'</span>'}).join('')}
 async function loadGpu(){
  if(!ADDONS.includes('gpu'))return;
- try{const r=await fetch('/api/addon/gpu');gpuData=await r.json()}catch(e){gpuData=null}
- const sb=document.querySelector('#stats'),html=gpuChip(gpuData),
-  els=[...sb.querySelectorAll('.gpu-chip')];
- if(els.map(e=>e.outerHTML).join('')===html)return;
- els.forEach(el=>el.remove());
- if(html)sb.insertAdjacentHTML('beforeend',html);}
+ /* on failure leave the previous chips in place (stale beats blinking out) */
+ try{const r=await fetch('/api/addon/gpu');if(!r.ok)return;gpuData=await r.json()}catch(e){return}
+ if(!gpuData||gpuData.error||!Array.isArray(gpuData.gpus)||!gpuData.gpus.length)return;
+ const html=gpuChip(gpuData);
+ if(html===gpuHtml)return; /* compare rendered strings: outerHTML quoting never matches the template */
+ gpuHtml=html;
+ const sb=document.querySelector('#stats');
+ [...sb.querySelectorAll('.gpu-chip')].forEach(el=>el.remove());
+ sb.insertAdjacentHTML('beforeend',html);}
 /* AI usage and Docker are checked often, so they sit above the long
    services table; GPU lives in the stats bar (loadGpu). Needle is pinned
    first (its margin assumes it leads); the server sends the rest sorted. */
