@@ -19,7 +19,7 @@ except ImportError:
 # Windows keeps the same filenames under %APPDATA%\pineports\; Linux keeps
 # ~/.config/ as before. One base dir, computed once.
 IS_WIN = sys.platform == "win32"
-VERSION = "0.7.0"
+VERSION = "0.8.0"
 
 def CONFIG_PATH(fname):
     base = (os.path.join(os.environ.get("APPDATA", os.path.expanduser("~")),
@@ -81,6 +81,10 @@ def _find_addons():
     if pdock:
         a["docker"] = {"cmd": pdock, "cached": [], "live": [],
                         "timeout": (10, 10)}  # local socket, always fast
+    pgpu = _addon_cmd("pineports-gpu")
+    if pgpu:
+        a["gpu"] = {"cmd": pgpu, "cached": ["--cached"], "live": [],
+                    "timeout": (10, 10)}  # nvidia-smi is a local driver call
     return a
 
 ADDONS = _find_addons()
@@ -2000,7 +2004,21 @@ docker:(box,d)=>{
  if(!d.containers||!d.containers.length){box.innerHTML='<span style="color:var(--dim)">no containers running</span>';return}
  box.innerHTML=d.containers.map(c=>`<div style="margin:.3rem 0"><b>${esc(c.Name)}</b>`
   +` <span style="color:var(--dim)">${esc(c.CPUPerc)} CPU · ${esc(c.MemUsage)}`
-  +`${c.State&&c.State!=='running'?' · <span style="color:var(--kill)">'+esc(c.State)+'</span>':''}</span></div>`).join('');}};
+  +`${c.State&&c.State!=='running'?' · <span style="color:var(--kill)">'+esc(c.State)+'</span>':''}</span></div>`).join('');},
+gpu:(box,d)=>{
+ if(d.error){box.innerHTML=`<span style="color:var(--kill)">${esc(d.error)}</span>`;return}
+ if(!d.gpus||!d.gpus.length){box.innerHTML='<span style="color:var(--dim)">no NVIDIA GPUs found</span>';return}
+ const n=(v,suf)=>v==null?'—':(Math.round(v*10)/10)+suf;
+ box.innerHTML=d.gpus.map(g=>{
+  const pct=g.mem_total?Math.min(g.mem_used/g.mem_total*100,100):null;
+  return`<div style="margin:.3rem 0"><b>${esc(g.name)}</b>`+
+   `<div style="padding-left:1rem;color:var(--dim)">VRAM ${n(g.mem_used,'/')+n(g.mem_total,' MiB')}`+
+   (pct!=null?` <b style="color:var(--fg)">(${pct.toFixed(0)}%)</b>${meter(pct)}`:'')+`</div>`+
+   `<div style="padding-left:1rem;color:var(--dim)">Util ${n(g.util,'%')} · Temp ${n(g.temp,'°C')}`+
+   (g.power_draw!=null?` · Power ${n(g.power_draw,'W')}${g.power_limit?' / '+n(g.power_limit,'W'):''}`:'')+
+   (g.fan!=null?` · Fan ${n(g.fan,'%')}`:'')+`</div></div>`}).join('')
+ +`<div style="color:var(--dim);font-size:.75rem;margin-top:.3rem">${d._live?'live':'cached'} `
+ +(d.updated?new Date(d.updated*1000).toLocaleTimeString():'')+'</div>';}};
 async function loadAddon(name,live){
  const btn=document.querySelector('#addon-'+name+' button');
  if(btn){btn.disabled=true;btn.textContent=live?'…':'refresh';}

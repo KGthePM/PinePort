@@ -14,7 +14,7 @@ Listener overview for the box it runs on — what's running, on which ports, how
   - Kill buttons hidden for system services (cupsd, avahi, tailscaled, AdGuardHome, systemd)
   - Stats bar: CPU/RAM/disk % with meters, load, uptime — read from `/proc` per poll, no daemons
   - Theme picker: midnight/forest/paper/plum/nord/gruvbox/dracula/solarized/phosphor/amber/contrast, plus four animated themes: Retro (CRT monitor), Departures (split-flap airport board; changed values flip, new ports show BOARDING), Wasteland (rusted riveted plate with falling ash and a flickering generator; new ports glow as SIGNAL) and Tetromino (8-bit Tetris well with a pixel font; each row gets a piece, new services drop in, a stopped one flashes and clears like a line, kill reads DROP, new ports NEXT). Saved in localStorage `pp_theme`
-  - Add-on system: `_find_addons()` probes PATH at startup (`shutil.which`); found tool → card + `/api/addon/<name>` route, absent → quietly skipped. Contract: CLI prints JSON, supports `--cached` (fast, no network) and bare invocation (live, own cooldowns). Registry in `ADDONS` dict; renderers in `CARD_RENDER` (generic JSON dump fallback). First add-on: [Needle](https://github.com/KGthePM/Needle) (AI usage gauge). Second: `pineports-docker` (real container CPU/RAM via `docker stats --no-stream`).
+  - Add-on system: `_find_addons()` probes PATH at startup (`shutil.which`); found tool → card + `/api/addon/<name>` route, absent → quietly skipped. Contract: CLI prints JSON, supports `--cached` (fast, no network) and bare invocation (live, own cooldowns). Registry in `ADDONS` dict; renderers in `CARD_RENDER` (generic JSON dump fallback). First add-on: [Needle](https://github.com/KGthePM/Needle) (AI usage gauge). Second: `pineports-docker` (real container CPU/RAM via `docker stats --no-stream`). Third: `pineports-gpu` (GPU util %, VRAM used/total, temp, power, fan via `nvidia-smi`; NVIDIA driver required — absent → card skipped).
   - New-listener badge: ports first seen < 24h ago get a `new` badge — labeled ports and ephemeral ports (≥ 32768, VS Code/Firefox) are exempt. History in `~/.config/pineports-seen.json`.
 
 ## Install
@@ -23,7 +23,7 @@ Listener overview for the box it runs on — what's running, on which ports, how
 git clone https://github.com/KGthePM/PinePort.git && cd PinePort && ./install.sh
 ```
 
-The installer copies `pineports`, `pineports-docker` and the `ports` alias to `~/.local/bin`, asks for a dashboard PIN (stored as a sha256 hash, `chmod 600`), and enables the `pineports` systemd user service with linger, so the dashboard starts at boot and keeps running while you're logged out.
+The installer copies `pineports`, `pineports-docker`, `pineports-gpu` and the `ports` alias to `~/.local/bin`, asks for a dashboard PIN (stored as a sha256 hash, `chmod 600`), and enables the `pineports` systemd user service with linger, so the dashboard starts at boot and keeps running while you're logged out.
 
 ```bash
 ./install.sh               # re-run any time to update; keeps your PIN and labels
@@ -77,6 +77,10 @@ python -m pip install psutil
   discovers `needle` on PATH and the standard
   `%LOCALAPPDATA%\Needle\bin\needle.py` installation. Restart PinePort after
   installing Needle so the AI usage card is registered.
+- **GPU readings:** `pineports-gpu` is installed automatically and shows a
+  card when an NVIDIA driver is present (`nvidia-smi` on PATH or in
+  System32/NVSMI). GPU util %, VRAM used/total, temp, power, fan. No NVIDIA
+  GPU → card is skipped. Restart PinePort if you install the driver later.
 
 ### Windows smoke-test checklist (first run on a new machine)
 

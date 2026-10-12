@@ -51,7 +51,7 @@ To add one:
 1. Register it in `_find_addons()`.
 2. Add a JS renderer to `CARD_RENDER` in `PAGE_TMPL`. Without one, the card falls back to a raw JSON dump.
 
-Existing add-ons: `needle` (external repo KGthePM/Needle, AI usage) and `pineports-docker` (in this repo, `docker stats --no-stream`).
+Existing add-ons: `needle` (external repo KGthePM/Needle, AI usage), `pineports-docker` (in this repo, `docker stats --no-stream`), and `pineports-gpu` (in this repo, `nvidia-smi --query-gpu=... --format=csv,noheader,nounits`; resolves nvidia-smi via PATH then, on Windows only, System32 and the legacy NVSMI folder; exit 1 with a stderr message when the NVIDIA driver is absent, so the card shows the error; JSON shape: `{"gpus": [{index, name, util, mem_used, mem_total, temp, power_draw, power_limit, fan}], "updated"}` with null for any reading nvidia-smi reports as N/A).
 
 ## Other files
 

@@ -49,8 +49,8 @@ uninstall() {
     rm -f "$UNIT_DIR/pineports.service"
     systemctl --user daemon-reload
 
-    rm -f "$BIN/pineports" "$BIN/pineports-docker" "$BIN/pineports-uninstall"
-    say "Removed pineports, pineports-docker and pineports-uninstall from $BIN"
+    rm -f "$BIN/pineports" "$BIN/pineports-docker" "$BIN/pineports-gpu" "$BIN/pineports-uninstall"
+    say "Removed pineports, pineports-docker, pineports-gpu and pineports-uninstall from $BIN"
     if is_our_wrapper "$BIN/ports"; then rm -f "$BIN/ports"
     else warn "Left $BIN/ports alone (not PinePort's wrapper)"; fi
 
@@ -73,14 +73,14 @@ do_install() {
     local reset_pin=$1
     command -v python3   >/dev/null || die "python3 is required"
     command -v systemctl >/dev/null || die "systemd is required for the web dashboard"
-    for f in pineports pineports-docker ports-wrapper systemd/pineports.service; do
+    for f in pineports pineports-docker pineports-gpu ports-wrapper systemd/pineports.service; do
         [[ -f $SRC/$f ]] || die "missing $f — run this from a PinePort checkout"
     done
 
     mkdir -p "$BIN" "$UNIT_DIR"
 
     say "Installing to $BIN"
-    install -m 755 "$SRC/pineports" "$SRC/pineports-docker" "$BIN/"
+    install -m 755 "$SRC/pineports" "$SRC/pineports-docker" "$SRC/pineports-gpu" "$BIN/"
     install -m 755 "$SRC/install.sh" "$BIN/pineports-uninstall"
     if is_our_wrapper "$BIN/ports"; then install -m 755 "$SRC/ports-wrapper" "$BIN/ports"
     else warn "$BIN/ports already exists and isn't PinePort's — skipped the 'ports' alias"; fi
