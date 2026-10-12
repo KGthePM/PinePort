@@ -3,8 +3,10 @@
 
 PinePort add-on contract: print JSON. Reads every NVIDIA GPU through
 nvidia-smi (installed with the driver, on PATH on both Linux and
-Windows). Exit non-zero (with a message on stderr) when nvidia-smi is
-missing or fails, so the card shows the real error.
+Windows). No nvidia-smi at all is a normal state for Intel/AMD-only
+boxes: exit 0 with an empty gpus list, so the card reads "no NVIDIA
+GPUs found" instead of an error. Exit non-zero (with a message on
+stderr) only when nvidia-smi exists but fails.
 
 `--cached` and bare invocation produce the same output: nvidia-smi is a
 local driver call, fast enough that cached and live are the same thing.
@@ -50,9 +52,10 @@ def _num(value):
 def main():
     smi = find_nvidia_smi()
     if not smi:
-        print("nvidia-smi not found (NVIDIA driver not installed?)",
-              file=sys.stderr)
-        sys.exit(1)
+        # No driver at all is a normal state (Intel/AMD-only boxes), not an
+        # error — report it benignly and let the card say so.
+        print(json.dumps({"gpus": [], "updated": time.time()}))
+        return
     try:
         r = subprocess.run(
             [smi, f"--query-gpu={QUERY}", "--format=csv,noheader,nounits"],

@@ -56,13 +56,15 @@ assert "gpu:(box,d)=>" in src, "missing gpu card renderer"
 assert 'pgpu = _addon_cmd("pineports-gpu")' in src
 print("3. renderer + registration present in pineports — OK")
 
-# 4. without nvidia-smi the CLI exits 1 with a stderr message (the card
-#    shows it) — simulate by pointing PATH at an empty dir via a wrapper
+# 4. without nvidia-smi the CLI reports an empty list (benign card:
+#    "no NVIDIA GPUs found") — simulate via a PATH without it
 env = dict(os.environ, PATH="/tmp/pineports-gpu-test-empty")
 os.makedirs("/tmp/pineports-gpu-test-empty", exist_ok=True)
 r3 = subprocess.run([sys.executable, cli], capture_output=True, text=True,
                     env=env)
-assert r3.returncode == 1 and "nvidia-smi not found" in r3.stderr
-print("4. missing-driver error path — OK")
+assert r3.returncode == 0, r3.stderr
+d3 = json.loads(r3.stdout)
+assert d3["gpus"] == [] and isinstance(d3["updated"], float)
+print("4. missing-driver empty-list path — OK")
 
 print("ALL GPU ADD-ON CHECKS PASSED")
