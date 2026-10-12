@@ -19,7 +19,7 @@ except ImportError:
 # Windows keeps the same filenames under %APPDATA%\pineports\; Linux keeps
 # ~/.config/ as before. One base dir, computed once.
 IS_WIN = sys.platform == "win32"
-VERSION = "0.6.0"
+VERSION = "0.7.0"
 
 def CONFIG_PATH(fname):
     base = (os.path.join(os.environ.get("APPDATA", os.path.expanduser("~")),
@@ -760,7 +760,9 @@ grid:{bg:'#05061a',fg:'#dff6ff',dim:'#7f8fc4',line:'#1b2a5c',accent:'#3ce8ff',ki
 saucer:{bg:'#0c0716',fg:'#ecf6e4',dim:'#9a8fb5',line:'#2b2145',accent:'#8dff5a',kill:'#ff5c9a',killbg:'#3a0f26',barbg:'#1c1433',warn:'#ffd447',warnbg:'#3a3212',
  _fx:'ufo',_bar:'#0c0716',_dot:'radial-gradient(50% 18% at 50% 60%,#c9c3d9 92%,transparent),radial-gradient(circle at 50% 50%,#8dff5a 0 22%,#0c0716 27%)'},
 molten:{bg:'#1a0814',fg:'#f6e3d6',dim:'#a98a9c',line:'#3d1a30',accent:'#ff8a3d',kill:'#ff3f8e',killbg:'#3a0c22',barbg:'#2a0f20',warn:'#ffd25a',warnbg:'#3a2a10',
- _fx:'wax',_bar:'#1a0814',_dot:'radial-gradient(circle at 34% 68%,#ff8a3d 0 27%,transparent 30%),radial-gradient(circle at 66% 32%,#ff3f8e 0 20%,transparent 23%),#2a0f20'}};
+ _fx:'wax',_bar:'#1a0814',_dot:'radial-gradient(circle at 34% 68%,#ff8a3d 0 27%,transparent 30%),radial-gradient(circle at 66% 32%,#ff3f8e 0 20%,transparent 23%),#2a0f20'},
+felt:{bg:'#0c3a25',fg:'#f3ead3',dim:'#9fbba6',line:'#1f5a3c',accent:'#d9b45a',kill:'#e0524a',killbg:'#3a1512',barbg:'#082b1a',warn:'#f0d58a',warnbg:'#3a3212',
+ _fx:'felt',_bar:'#0c3a25',_dot:'radial-gradient(circle,#c8332b 0 15%,transparent 19%),linear-gradient(#f3ead3,#f3ead3) 50%/44% 62% no-repeat,#0f4a2e'}};
 /* _keys aren't colors: _fx turns on an effect skin (FX_CSS), _bar tints the
    phone's browser bar instead of bg, _dot styles the picker swatch */
 /* auto follows the OS light/dark setting */
@@ -1667,6 +1669,100 @@ html[data-fx=wax] button[data-p]{padding:.3rem .55rem}html[data-fx=wax] button[d
 80%{opacity:.9;transform:translateY(25%) scaleY(.55);border-radius:.4rem .4rem 1.2rem 1.2rem}100%{opacity:0;transform:translateY(60%) scaleY(.2)}}
 @keyframes wax-drip{0%,45%{opacity:0;transform:none}55%{opacity:1;transform:none}100%{opacity:0;transform:translateY(2.4rem) scale(.6,1.2)}}
 @keyframes wax-name{0%,15%{opacity:0}25%,50%{opacity:1;transform:none}85%,100%{opacity:0;transform:translateY(.5rem) scaleY(1.9)}}
+/* Felt: a card table. Green baize under an overhead lamp, gold rails, ivory
+   serif type, a suit pip cycling down the names. No ambient motion. Meters
+   are poker-chip stacks. New pids are dealt (.drop): a face-down card slides
+   in and turns over, and their NEW badge is a little card that flips up. A
+   vanished pid's .clr row is folded: its card turns face down and slides off
+   to the muck. FOLDED counts them. Kill reads FOLD. System serif fonts only. */
+html[data-fx=felt]{--gold:#d9b45a;--ivory:#f3ead3;--glass:rgba(4,26,15,.42);--edge:rgba(217,180,90,.42);
+--serif:"Iowan Old Style","Palatino Linotype",Palatino,"Book Antiqua",Georgia,serif;
+--back:repeating-linear-gradient(45deg,rgba(243,234,211,.16) 0 1.5px,transparent 1.5px 5px),
+repeating-linear-gradient(-45deg,rgba(243,234,211,.16) 0 1.5px,transparent 1.5px 5px),#9e2420;
+background-color:#0c3a25;min-height:100%;background-image:
+url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 .55 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.4'/%3E%3C/svg%3E"),
+radial-gradient(120% 75% at 50% 18%,#1a6b44,#0f4a2e 50%,#082b1a)}
+html[data-fx=felt] body{font-family:var(--serif);font-variant-numeric:lining-nums tabular-nums;margin:1.4rem auto 2rem;background:transparent}
+html[data-fx=felt] h1{font-size:0!important;margin:1.4rem 0 1.1rem;display:flex;flex-direction:column;align-items:flex-start;gap:.4rem}
+html[data-fx=felt] h1::before{content:'PinePorts';font:700 2.1rem/1.05 var(--serif);letter-spacing:.01em;
+background:linear-gradient(#fbecb4,#d9b45a 48%,#a5781f 52%,#e8c874);-webkit-background-clip:text;background-clip:text;color:transparent;
+filter:drop-shadow(0 2px 2px rgba(0,0,0,.45))}
+html[data-fx=felt] h1::after{content:'\\2660\\FE0E  ' attr(data-host) '  \\00B7  FOLDED ' attr(data-lines);white-space:pre;
+font:600 .64rem/1.6 var(--serif);letter-spacing:.22em;color:var(--gold);opacity:.8}
+html[data-fx=felt] :is(#stats,.card,table,#tpanel){background:var(--glass);border:1px solid var(--edge);border-radius:16px;
+box-shadow:inset 0 0 0 4px rgba(8,43,26,.5),inset 0 0 0 5px rgba(217,180,90,.16),0 10px 26px rgba(0,0,0,.35)}
+html[data-fx=felt] #stats{padding:.75rem .95rem}html[data-fx=felt] .card{padding:.6rem .95rem}
+html[data-fx=felt] #stats b{color:var(--gold);font-weight:700}
+html[data-fx=felt] .meter{width:6rem;height:.62rem;border-radius:3px;background:rgba(0,0,0,.3);box-shadow:inset 0 1px 2px rgba(0,0,0,.55)}
+html[data-fx=felt] .meter i{color:#2f6fd0;border-radius:3px;background:
+linear-gradient(rgba(255,255,255,.3),transparent 35%,transparent 65%,rgba(0,0,0,.35)),
+repeating-linear-gradient(90deg,transparent 0 .32rem,rgba(0,0,0,.55) .32rem .38rem),
+repeating-linear-gradient(90deg,rgba(243,234,211,.9) 0 .32rem,transparent .32rem .76rem) 0 50%/100% 36% no-repeat,currentColor}
+html[data-fx=felt] .warn i{color:#e0a92b}html[data-fx=felt] .crit i{color:#d23a32}
+html[data-fx=felt] #theme button{background:var(--glass);border-color:var(--edge)}
+html[data-fx=felt] #tpanel button.sel{background:rgba(217,180,90,.12)}
+html[data-fx=felt] :is(h2,#tpanel h3){font-family:var(--serif);font-variant:small-caps;letter-spacing:.08em;color:var(--gold)}
+html[data-fx=felt] h2{font-size:1.1rem!important}
+html[data-fx=felt] table{border-collapse:separate;border-spacing:0;padding:.3rem .4rem}
+html[data-fx=felt] th{font-size:.64rem;font-weight:700;letter-spacing:.18em;color:var(--gold);border-bottom:1px solid var(--edge)}
+html[data-fx=felt] td{border-bottom:1px solid rgba(217,180,90,.12)}html[data-fx=felt] tbody tr:last-child td{border-bottom:0}
+html[data-fx=felt] td:first-child{position:relative;overflow-wrap:break-word;font-weight:700}
+html[data-fx=felt] .mem{white-space:nowrap;color:var(--dim)}
+html[data-fx=felt] tbody tr:hover td{background:rgba(243,234,211,.04)}
+html[data-fx=felt] a{color:var(--ivory);text-decoration:none;border-bottom:1px dotted var(--gold)}
+html[data-fx=felt] tbody tr:not(.clr) td:first-child::before{margin-right:.4rem;font-weight:400;color:var(--ivory)}
+html[data-fx=felt] tbody tr:nth-child(4n+1 of :not(.clr)) td:first-child::before{content:'\\2660\\FE0E'}
+html[data-fx=felt] tbody tr:nth-child(4n+2 of :not(.clr)) td:first-child::before{content:'\\2665\\FE0E';color:var(--kill)}
+html[data-fx=felt] tbody tr:nth-child(4n+3 of :not(.clr)) td:first-child::before{content:'\\2663\\FE0E'}
+html[data-fx=felt] tbody tr:nth-child(4n+4 of :not(.clr)) td:first-child::before{content:'\\2666\\FE0E';color:var(--kill)}
+html[data-fx=felt] tr.drop td{animation:felt-show 1s calc(min(var(--r),12)*90ms) both}
+html[data-fx=felt] tr.drop td:first-child{animation-name:felt-name}
+html[data-fx=felt] tr.drop td:first-child::after{content:'';position:absolute;left:-.2rem;top:50%;width:1.5rem;height:2.1rem;margin-top:-1.05rem;
+border-radius:.25rem;background:var(--back);box-shadow:inset 0 0 0 2px #9e2420,inset 0 0 0 3px var(--ivory),0 3px 6px rgba(0,0,0,.45);
+animation:felt-deal 1s ease-out calc(min(var(--r),12)*90ms) both}
+html[data-fx=felt] .badge{font-size:0;padding:0;margin-left:.35rem;background:none;vertical-align:.1rem;white-space:nowrap}
+html[data-fx=felt] .badge::before{content:'\\2666\\FE0E';display:inline-block;font:700 .62rem/1 var(--serif);color:#c8332b;
+padding:.12rem .2rem .3rem;border-radius:2px;background:var(--ivory);box-shadow:0 1px 3px rgba(0,0,0,.5);transform:rotate(-6deg)}
+html[data-fx=felt] .badge::after{content:'NEW';margin-left:.25rem;font:700 .56rem/1 var(--serif);letter-spacing:.12em;color:var(--warn)}
+html[data-fx=felt] tr.drop .badge::before{animation:felt-flip .5s ease-out calc(min(var(--r),12)*90ms + .8s) both}
+html[data-fx=felt] button{font-family:var(--serif);-webkit-tap-highlight-color:transparent}
+html[data-fx=felt] button[data-p]{font-size:0;padding:.32rem .6rem;white-space:nowrap;color:var(--ivory);border:0;border-radius:5px;
+background:var(--back);box-shadow:inset 0 0 0 2px #9e2420,inset 0 0 0 3px rgba(243,234,211,.7),0 2px 4px rgba(0,0,0,.4);transition:transform .15s}
+html[data-fx=felt] button[data-p]::after{content:'FOLD';font-size:.66rem;font-weight:700;letter-spacing:.14em;text-shadow:0 1px 2px #000}
+html[data-fx=felt] button[data-p]:hover,html[data-fx=felt] button[data-p]:active{color:var(--ivory);transform:translateY(-2px);
+box-shadow:inset 0 0 0 2px #9e2420,inset 0 0 0 3px var(--gold),0 5px 9px rgba(0,0,0,.5)}
+html[data-fx=felt] tr.clr td{padding:0;border:0}
+html[data-fx=felt] tr.clr div{position:relative;height:var(--h);animation:felt-gone 1.4s ease-in both}
+html[data-fx=felt] tr.clr div::before,html[data-fx=felt] tr.clr div::after{content:'';position:absolute;inset:.2rem .3rem;border-radius:.45rem}
+html[data-fx=felt] tr.clr div::before{background:linear-gradient(#fbf5e4,#e9dcba);box-shadow:0 3px 8px rgba(0,0,0,.45);animation:felt-face 1.4s both}
+html[data-fx=felt] tr.clr div::after{background:var(--back);box-shadow:inset 0 0 0 2px #9e2420,inset 0 0 0 3px var(--ivory),0 3px 8px rgba(0,0,0,.45);
+animation:felt-back 1.4s ease-in both}
+html[data-fx=felt] tr.clr span{position:absolute;z-index:1;left:1rem;top:0;line-height:var(--h);white-space:nowrap;font-weight:700;color:#1d1a14;
+animation:felt-face 1.4s both}
+html[data-fx=felt] tr.clr span::before{content:'\\2663\\FE0E  '}
+html[data-fx=felt] #msg{color:var(--dim);font-size:.78rem;font-style:italic}
+html[data-fx=felt] body:has(#pin){margin:0;min-height:100vh}
+html[data-fx=felt] body:has(#pin) h1{align-items:center;gap:.9rem;margin:0 0 1.6rem}
+html[data-fx=felt] body:has(#pin) h1::after{content:'TABLE CLOSED\\A' attr(data-host);text-align:center}
+html[data-fx=felt] #pin{border-radius:8px;border-color:var(--edge);background:var(--glass);color:var(--gold);outline:none}
+html[data-fx=felt] #pin:focus{border-color:var(--gold);box-shadow:0 0 12px rgba(217,180,90,.4)}
+html[data-fx=felt] body:has(#pin) button{font-size:0;border-radius:8px;background:rgba(217,180,90,.14);border-color:var(--gold)}
+html[data-fx=felt] body:has(#pin) button::after{content:'DEAL ME IN';font-size:.8rem;font-weight:700;letter-spacing:.08em;color:var(--gold)}
+@media (max-width:600px){html[data-fx=felt] body{margin:.5rem;padding:0 .5rem 1rem}
+html[data-fx=felt] h1{margin-top:1.2rem}html[data-fx=felt] h1::before{font-size:1.8rem}
+html[data-fx=felt] table{font-size:.8rem;padding:.15rem}html[data-fx=felt] td{padding:.5rem .35rem}html[data-fx=felt] th{padding:.45rem .35rem;letter-spacing:.12em}
+html[data-fx=felt] .meter{width:4.5rem}
+html[data-fx=felt] tbody tr:not(.clr) td:first-child::before{margin-right:.25rem}
+html[data-fx=felt] .badge{margin-left:.2rem}html[data-fx=felt] .badge::after{display:none}
+html[data-fx=felt] button[data-p]{padding:.3rem .5rem}html[data-fx=felt] button[data-p]::after{font-size:.62rem}}
+@keyframes felt-deal{0%{opacity:0;transform:translate(75vw,-2.5rem) rotate(28deg)}10%{opacity:1}
+50%{transform:rotate(-3deg)}62%{transform:scaleX(1)}76%,100%{transform:scaleX(0)}}
+@keyframes felt-show{0%,62%{opacity:0}100%{opacity:1}}
+@keyframes felt-name{0%,62%{color:transparent}100%{color:var(--fg)}}
+@keyframes felt-flip{from{transform:rotate(-6deg) scaleX(0)}}
+@keyframes felt-gone{0%,80%{height:var(--h)}100%{height:0}}
+@keyframes felt-face{0%{opacity:0;transform:translateY(-.4rem)}10%,32%{opacity:1;transform:none}44%,100%{opacity:1;transform:scaleY(0)}}
+@keyframes felt-back{0%,44%{transform:scaleY(0)}56%,64%{opacity:1;transform:none}88%,100%{opacity:0;transform:translate(-55%,-35%) rotate(-12deg) scale(.8)}}
 @keyframes twinkle{from{opacity:.25}to{opacity:1}}
 @keyframes fly{0%{transform:translate(-120px,1.2rem) rotate(-4deg)}5%{transform:translate(25vw,.4rem) rotate(3deg)}
 10%{transform:translate(50vw,1.4rem) rotate(-3deg)}15%{transform:translate(75vw,.3rem) rotate(4deg)}20%,100%{transform:translate(calc(100vw + 40px),1rem) rotate(-2deg)}}
@@ -1692,7 +1788,7 @@ html[data-fx=wax] button[data-p]{padding:.3rem .55rem}html[data-fx=wax] button[d
 @keyframes pulse{50%{opacity:.55}}
 @keyframes flap-top{to{transform:perspective(500px) rotateX(-90deg);filter:brightness(.5)}}
 @keyframes flap-bot{from{transform:perspective(500px) rotateX(90deg);filter:brightness(.5)}}
-@media (prefers-reduced-motion:reduce){html[data-fx] *,html[data-fx] *::before,html[data-fx] *::after,html[data-fx]::before,html[data-fx]::after{animation:none!important}html[data-fx=flap] .fl,html[data-fx=rust]::before,html[data-fx=tet] .clr,html[data-fx=ufo] .clr,html[data-fx=ufo]::after,html[data-fx=wax] .clr{display:none}html[data-fx=wax] .meter i{transition:none}}"""
+@media (prefers-reduced-motion:reduce){html[data-fx] *,html[data-fx] *::before,html[data-fx] *::after,html[data-fx]::before,html[data-fx]::after{animation:none!important}html[data-fx=flap] .fl,html[data-fx=rust]::before,html[data-fx=tet] .clr,html[data-fx=ufo] .clr,html[data-fx=ufo]::after,html[data-fx=wax] .clr,html[data-fx=felt] .clr,html[data-fx=felt] tr.drop td:first-child::after{display:none}html[data-fx=wax] .meter i{transition:none}}"""
 
 # Press Start 2P by CodeMan38 (SIL OFL 1.1), subset to printable ASCII, woff2.
 # Tetromino's pixel font, embedded so the page needs no network.
@@ -1800,7 +1896,7 @@ function rate(b){return b>=1048576?(b/1048576).toFixed(1)+'MB/s':b>=1024?Math.ro
 function meter(pct){const cls=pct>90?'crit':pct>75?'warn':'';
  return `<span class="meter ${cls}"><i style="width:${Math.min(pct,100)}%"></i></span>`}
 let cells={};  /* last {text, html} per pid+column, so the flap skin flips only what changed */
-let lines=0;   /* rows the tetromino skin has cleared / the saucer has abducted / molten has melted this visit */
+let lines=0;   /* rows the tetromino skin has cleared / the saucer has abducted / molten has melted / felt has folded this visit */
 async function refresh(){
  const h=document.documentElement;h.classList.add('io');setTimeout(()=>h.classList.remove('io'),200);
  const r=await fetch('/api/services');const d=await r.json();
@@ -1822,8 +1918,8 @@ async function refresh(){
  if(prev.length===mi.length){const to=mi.map(i=>i.style.width);mi.forEach((i,k)=>i.style.width=prev[k]);
   sb.offsetWidth;mi.forEach((i,k)=>i.style.width=to[k])}
  h.style.setProperty('--heat',Math.min(st.cpu_pct,100)/100);  /* molten's wax blobs swell with CPU */
- const tb=document.querySelector('#t tbody'),was=cells,fx=h.dataset.fx,gone=fx==='tet'||fx==='ufo'||fx==='wax';
- /* tetromino/saucer/molten: remember each row's pid and height so a vanished one can clear */
+ const tb=document.querySelector('#t tbody'),was=cells,fx=h.dataset.fx,gone=fx==='tet'||fx==='ufo'||fx==='wax'||fx==='felt';
+ /* tetromino/saucer/molten/felt: remember each row's pid and height so a vanished one can clear */
  const old=gone?[...tb.rows].map(r=>[r.dataset.pid,r.offsetHeight]):[];
  tb.style.setProperty('--ph',ph);tb.innerHTML='';cells={};let fresh=0;
  d.services.forEach(s=>{
