@@ -19,7 +19,7 @@ except ImportError:
 # Windows keeps the same filenames under %APPDATA%\pineports\; Linux keeps
 # ~/.config/ as before. One base dir, computed once.
 IS_WIN = sys.platform == "win32"
-VERSION = "0.9.0"
+VERSION = "0.9.1"
 ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
 WINDOWS_MANAGER = os.path.join(ROOT_DIR, "windows", "pineports.ps1")
 
@@ -1948,7 +1948,19 @@ border-radius:4px;padding:.45rem .55rem;font:inherit;letter-spacing:.18em}
 #version{margin:1.6rem 0 .5rem;text-align:center;color:var(--dim);font-size:.75rem}
 .card[hidden],#t[hidden]{display:none!important}
 .fold::before{content:attr(data-f) " ";font-size:.75em}
-__FX__</style></head><body>
+__FX__
+/* Keep all service columns inside narrow phone viewports. This comes after the
+   skin CSS so every theme gets the same containment rules. */
+@media (max-width:600px){
+html:not([data-fx]) #t{font-size:.8rem}
+#t{box-sizing:border-box;max-width:100%;table-layout:fixed}
+#t th,#t td{padding-left:.3rem;padding-right:.3rem}
+#t th:nth-child(2){width:4.5rem}#t th:nth-child(3){width:27%}#t th:nth-child(4){width:3.75rem}
+#t td:first-child{overflow-wrap:break-word;word-break:normal}
+#t td:nth-child(2),#t td:last-child{white-space:nowrap}
+#t td:nth-child(3){overflow-wrap:break-word}
+#t button[data-p]{box-sizing:border-box;max-width:100%;padding-left:.4rem;padding-right:.4rem}
+}</style></head><body>
 <h1 data-host="__HOST__" data-lines="0">PinePorts — what's running on __HOST__</h1>
 <div id=controls><div id=theme><button id=tchip aria-expanded=false aria-controls=tpanel><span class=sw></span><span class=tn></span><span class=car>▼</span></button>
 <div id=tpanel hidden></div></div><button id=schip aria-expanded=false aria-controls=spanel>⚙ settings</button></div>

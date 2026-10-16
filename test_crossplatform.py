@@ -33,6 +33,13 @@ class Versioning(unittest.TestCase):
         self.assertIn('id=spanel', pp.PAGE)
         self.assertIn('/api/settings/pin', pp.PAGE)
 
+    def test_dashboard_contains_mobile_service_layout(self):
+        self.assertIn('#t{box-sizing:border-box;max-width:100%;table-layout:fixed}',
+                      pp.PAGE)
+        self.assertIn('#t td:first-child{overflow-wrap:break-word;word-break:normal}',
+                      pp.PAGE)
+        self.assertIn('#t th:nth-child(4){width:3.75rem}', pp.PAGE)
+
 
 class WinListeners(unittest.TestCase):
     def test_parses_listener_rows(self):
