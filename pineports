@@ -19,7 +19,9 @@ except ImportError:
 # Windows keeps the same filenames under %APPDATA%\pineports\; Linux keeps
 # ~/.config/ as before. One base dir, computed once.
 IS_WIN = sys.platform == "win32"
-VERSION = "0.8.5"
+VERSION = "0.9.0"
+ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
+WINDOWS_MANAGER = os.path.join(ROOT_DIR, "windows", "pineports.ps1")
 
 def CONFIG_PATH(fname):
     base = (os.path.join(os.environ.get("APPDATA", os.path.expanduser("~")),
@@ -41,6 +43,52 @@ SEEN_FILE = CONFIG_PATH("pineports-seen.json")
 NEW_WINDOW = 24 * 3600
 EPHEMERAL_MIN = 32768
 DOCKER = "docker" if IS_WIN else "/usr/bin/docker"
+
+class StartupError(RuntimeError):
+    pass
+
+def windows_startup(action):
+    """Read or change the current user's managed Windows startup shortcut."""
+    actions = {"status": "startup-status", "enable": "startup-enable",
+               "disable": "startup-disable"}
+    if not IS_WIN:
+        raise StartupError("startup settings are available only on Windows")
+    if action not in actions:
+        raise ValueError("unknown startup action")
+    if not os.path.isfile(WINDOWS_MANAGER):
+        raise StartupError("the PinePort Windows manager was not found")
+    try:
+        result = subprocess.run(
+            ["powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass",
+             "-File", WINDOWS_MANAGER, actions[action]],
+            capture_output=True, text=True, timeout=10)
+    except subprocess.TimeoutExpired as ex:
+        raise StartupError("the Windows startup operation timed out") from ex
+    except OSError as ex:
+        raise StartupError(f"could not run Windows PowerShell: {ex}") from ex
+    if result.returncode != 0:
+        detail = (result.stderr or result.stdout).strip()
+        raise StartupError(detail or "the Windows startup operation failed")
+    lines = [line.strip() for line in result.stdout.splitlines() if line.strip()]
+    try:
+        data = json.loads(lines[-1])
+        enabled = data["enabled"]
+        if not isinstance(enabled, bool):
+            raise ValueError
+    except (IndexError, KeyError, TypeError, ValueError, json.JSONDecodeError) as ex:
+        raise StartupError("Windows PowerShell returned an invalid startup status") from ex
+    return enabled
+
+def settings_snapshot():
+    if not IS_WIN:
+        return {"windows": False, "startup": {"supported": False}}
+    try:
+        enabled = windows_startup("status")
+        return {"windows": True,
+                "startup": {"supported": True, "enabled": enabled}}
+    except StartupError as ex:
+        return {"windows": True,
+                "startup": {"supported": False, "error": str(ex)}}
 
 # ---------- add-ons ----------
 # An add-on is a CLI found on PATH that prints JSON. Found at startup -> its
@@ -323,14 +371,9 @@ def pin_hash():
     except FileNotFoundError:
         return None
 
-def set_pin():
-    from getpass import getpass
-    pin = getpass("Dashboard PIN (4 digits): ")
-    confirm = getpass("Confirm PIN: ")
-    if len(pin) != 4 or not pin.isdigit():
-        raise SystemExit("PIN must be exactly 4 digits")
-    if pin != confirm:
-        raise SystemExit("PINs do not match")
+def save_pin(pin):
+    if not isinstance(pin, str) or len(pin) != 4 or not pin.isdigit():
+        raise ValueError("PIN must be exactly 4 digits")
     os.makedirs(os.path.dirname(PIN_FILE), exist_ok=True)
     tmp = f"{PIN_FILE}.{os.getpid()}.tmp"
     try:
@@ -343,6 +386,17 @@ def set_pin():
             os.unlink(tmp)
         except FileNotFoundError:
             pass
+
+def set_pin():
+    from getpass import getpass
+    pin = getpass("Dashboard PIN (4 digits): ")
+    confirm = getpass("Confirm PIN: ")
+    if pin != confirm:
+        raise SystemExit("PINs do not match")
+    try:
+        save_pin(pin)
+    except ValueError as ex:
+        raise SystemExit(str(ex))
     print(f"PIN saved to {PIN_FILE}")
 
 SESSIONS = {}  # auth token -> PIN hash; changing the PIN revokes old sessions
@@ -1344,7 +1398,7 @@ html[data-fx=rust] button{border-radius:0;font-weight:700;letter-spacing:.1em;te
 html[data-fx=rust] button[data-p]{font-size:0;padding:.25rem .6rem;border-width:2px}
 html[data-fx=rust] button[data-p]::after{content:'SCRAP';font-size:.72rem}
 html[data-fx=rust] #stats{border:1px solid #3b2418;border-radius:0;background:rgba(0,0,0,.35);letter-spacing:.05em}
-html[data-fx=rust] :is(#theme button,#tpanel,#theme .sw){border-radius:0}
+html[data-fx=rust] :is(#theme button,#schip,#tpanel,#spanel,#theme .sw){border-radius:0}
 html[data-fx=rust] .meter,html[data-fx=rust] .meter i{border-radius:0}
 html[data-fx=rust] .meter i{color:var(--accent);background:repeating-linear-gradient(90deg,currentColor 0 .3rem,transparent .3rem .4rem)}
 html[data-fx=rust] .warn i{color:var(--warn)}html[data-fx=rust] .crit i{color:var(--kill)}
@@ -1388,7 +1442,7 @@ html[data-fx=tet] .meter,html[data-fx=tet] .meter i{border-radius:0}
 html[data-fx=tet] .meter{height:.5rem;background:#000;box-shadow:inset 0 0 0 1px var(--edge)}
 html[data-fx=tet] .meter i{color:var(--accent);background:repeating-linear-gradient(90deg,currentColor 0 .375rem,transparent .375rem .5rem)}
 html[data-fx=tet] .warn i{color:var(--warn)}html[data-fx=tet] .crit i{color:var(--kill)}
-html[data-fx=tet] :is(#theme button,#tpanel){border-radius:0}html[data-fx=tet] #tpanel button{font-size:.68rem}html[data-fx=tet] #theme .sw{border-radius:0;box-shadow:var(--bev)}
+html[data-fx=tet] :is(#theme button,#schip,#tpanel,#spanel){border-radius:0}html[data-fx=tet] #tpanel button{font-size:.68rem}html[data-fx=tet] #theme .sw{border-radius:0;box-shadow:var(--bev)}
 html[data-fx=tet] th{font-size:.5rem;border-bottom:2px solid var(--edge);padding:.5rem .4rem}
 html[data-fx=tet] td{padding:.6rem .4rem;border-bottom:1px dashed rgba(255,255,255,.07)}
 html[data-fx=tet] td:first-child{overflow-wrap:break-word;position:relative;padding-left:calc(var(--s)*4 + 1rem)}html[data-fx=tet] .mem{white-space:nowrap}
@@ -1467,7 +1521,7 @@ html[data-fx=neon] #stats b{text-shadow:0 0 6px rgba(60,232,255,.6)}
 html[data-fx=neon] .meter{height:.3rem;border-radius:0;background:rgba(60,232,255,.1)}
 html[data-fx=neon] .meter i{border-radius:0;color:var(--cy);background:linear-gradient(90deg,transparent,currentColor calc(100% - 3px),#fff 0)}
 html[data-fx=neon] .warn i{color:var(--warn)}html[data-fx=neon] .crit i{color:var(--kill)}
-html[data-fx=neon] #theme .sw{border-radius:2px}html[data-fx=neon] #theme button{border-color:transparent;--fill:rgba(13,20,56,.55)}html[data-fx=neon] #tpanel button{letter-spacing:.04em;font-size:.72rem}html[data-fx=neon] #tpanel button.sel{--ec:var(--cy);--fill:rgba(60,232,255,.12);box-shadow:none}
+html[data-fx=neon] #theme .sw{border-radius:2px}html[data-fx=neon] :is(#theme button,#schip){border-color:transparent;--fill:rgba(13,20,56,.55)}html[data-fx=neon] #tpanel button{letter-spacing:.04em;font-size:.72rem}html[data-fx=neon] #tpanel button.sel{--ec:var(--cy);--fill:rgba(60,232,255,.12);box-shadow:none}
 html[data-fx=neon] table{border-collapse:separate;border-spacing:0 .35rem}
 html[data-fx=neon] th{font:.68rem var(--sans);letter-spacing:.25em;border:0;padding:.2rem .6rem}
 html[data-fx=neon] td{border:solid rgba(60,232,255,.22);border-width:1px 0;background:rgba(13,20,56,.55)}
@@ -1535,14 +1589,14 @@ html[data-fx=ufo] h1::before{content:'PINEPORT';font:700 1.45rem/1 var(--rnd);le
 text-shadow:0 0 6px rgba(141,255,90,.8),0 0 22px rgba(141,255,90,.4)}
 html[data-fx=ufo] h1::after{content:'ABDUCTED ' attr(data-lines) '\\A' attr(data-host);white-space:pre;
 font:600 .62rem/1.6 var(--rnd);letter-spacing:.2em;color:var(--dim)}
-html[data-fx=ufo] :is(#stats,.card,table,#tpanel){background:var(--glass);border:1px solid var(--edge);border-radius:16px;
+html[data-fx=ufo] :is(#stats,.card,table,#tpanel,#spanel){background:var(--glass);border:1px solid var(--edge);border-radius:16px;
 box-shadow:0 0 0 1px rgba(0,0,0,.3),0 8px 24px rgba(0,0,0,.35),inset 0 1px 0 rgba(255,255,255,.06);-webkit-backdrop-filter:blur(3px);backdrop-filter:blur(3px)}
 html[data-fx=ufo] #stats{padding:.7rem .9rem}
 html[data-fx=ufo] #stats b{color:var(--gr);font-weight:600;text-shadow:0 0 6px rgba(141,255,90,.45)}
 html[data-fx=ufo] .meter{height:.4rem;border-radius:9px;background:rgba(141,255,90,.1)}
 html[data-fx=ufo] .meter i{border-radius:9px;background:linear-gradient(90deg,rgba(141,255,90,.35),var(--gr));box-shadow:0 0 6px rgba(141,255,90,.6)}
 html[data-fx=ufo] .warn i{background:var(--warn);box-shadow:0 0 6px var(--warn)}html[data-fx=ufo] .crit i{background:var(--kill);box-shadow:0 0 6px var(--kill)}
-html[data-fx=ufo] #theme button{background:var(--glass);border-color:var(--edge)}html[data-fx=ufo] #tpanel{border-radius:16px}
+html[data-fx=ufo] :is(#theme button,#schip){background:var(--glass);border-color:var(--edge)}html[data-fx=ufo] :is(#tpanel,#spanel){border-radius:16px}
 html[data-fx=ufo] #tpanel button{border-radius:999px}html[data-fx=ufo] #tpanel button.sel{background:rgba(141,255,90,.12)}
 html[data-fx=ufo] h2{font-family:var(--rnd);letter-spacing:.06em;text-shadow:0 0 8px rgba(141,255,90,.4)}
 html[data-fx=ufo] table{border-collapse:separate;border-spacing:0;padding:.2rem .3rem}
@@ -1609,7 +1663,7 @@ background:linear-gradient(#ffd27a,#ff8a3d 45%,#ff3f8e);-webkit-background-clip:
 filter:drop-shadow(0 0 10px rgba(255,110,60,.45))}
 html[data-fx=wax] h1::after{content:'MELTED ' attr(data-lines) '\\A' attr(data-host);white-space:pre;
 font:600 .62rem/1.6 var(--rnd);letter-spacing:.22em;color:var(--dim)}
-html[data-fx=wax] :is(#stats,.card,table,#tpanel){background:var(--glass);border:1px solid var(--edge);border-radius:18px;
+html[data-fx=wax] :is(#stats,.card,table,#tpanel,#spanel){background:var(--glass);border:1px solid var(--edge);border-radius:18px;
 box-shadow:0 8px 28px rgba(0,0,0,.4),inset 0 1px 0 rgba(255,200,150,.07)}
 html[data-fx=wax] #stats{padding:.75rem .95rem}html[data-fx=wax] .card{padding:.6rem .95rem}
 html[data-fx=wax] #stats b{color:var(--or);font-weight:700}
@@ -1621,7 +1675,7 @@ html[data-fx=wax] .meter i::before{content:'';position:absolute;right:-.2rem;top
 background:radial-gradient(circle at 35% 35%,#ffe0b8,currentColor 60%);animation:wax-bulb 5s ease-in-out var(--ph,0s) infinite}
 html[data-fx=wax] .meter i::after{content:'';position:absolute;right:-.05rem;top:50%;width:.4rem;height:.4rem;margin-top:-.2rem;border-radius:50%;
 background:currentColor;animation:wax-shed 7s ease-in-out var(--ph,0s) infinite}
-html[data-fx=wax] #theme button{background:var(--glass);border-color:var(--edge)}
+html[data-fx=wax] :is(#theme button,#schip){background:var(--glass);border-color:var(--edge)}
 html[data-fx=wax] #tpanel button{border-radius:999px}html[data-fx=wax] #tpanel button.sel{background:rgba(255,138,61,.14)}
 html[data-fx=wax] h2{font-family:var(--rnd);font-weight:800;letter-spacing:.02em}
 html[data-fx=wax] table{border-collapse:separate;border-spacing:0;padding:.2rem .3rem}
@@ -1694,7 +1748,7 @@ background:linear-gradient(#fbecb4,#d9b45a 48%,#a5781f 52%,#e8c874);-webkit-back
 filter:drop-shadow(0 2px 2px rgba(0,0,0,.45))}
 html[data-fx=felt] h1::after{content:'\\2660\\FE0E  ' attr(data-host) '  \\00B7  FOLDED ' attr(data-lines);white-space:pre;
 font:600 .64rem/1.6 var(--serif);letter-spacing:.22em;color:var(--gold);opacity:.8}
-html[data-fx=felt] :is(#stats,.card,table,#tpanel){background:var(--glass);border:1px solid var(--edge);border-radius:16px;
+html[data-fx=felt] :is(#stats,.card,table,#tpanel,#spanel){background:var(--glass);border:1px solid var(--edge);border-radius:16px;
 box-shadow:inset 0 0 0 4px rgba(8,43,26,.5),inset 0 0 0 5px rgba(217,180,90,.16),0 10px 26px rgba(0,0,0,.35)}
 html[data-fx=felt] #stats{padding:.75rem .95rem}html[data-fx=felt] .card{padding:.6rem .95rem}
 html[data-fx=felt] #stats b{color:var(--gold);font-weight:700}
@@ -1704,7 +1758,7 @@ linear-gradient(rgba(255,255,255,.3),transparent 35%,transparent 65%,rgba(0,0,0,
 repeating-linear-gradient(90deg,transparent 0 .32rem,rgba(0,0,0,.55) .32rem .38rem),
 repeating-linear-gradient(90deg,rgba(243,234,211,.9) 0 .32rem,transparent .32rem .76rem) 0 50%/100% 36% no-repeat,currentColor}
 html[data-fx=felt] .warn i{color:#e0a92b}html[data-fx=felt] .crit i{color:#d23a32}
-html[data-fx=felt] #theme button{background:var(--glass);border-color:var(--edge)}
+html[data-fx=felt] :is(#theme button,#schip){background:var(--glass);border-color:var(--edge)}
 html[data-fx=felt] #tpanel button.sel{background:rgba(217,180,90,.12)}
 html[data-fx=felt] :is(h2,#tpanel h3){font-family:var(--serif);font-variant:small-caps;letter-spacing:.08em;color:var(--gold)}
 html[data-fx=felt] h2{font-size:1.1rem!important}
@@ -1855,11 +1909,13 @@ border:1px solid var(--line);border-radius:6px;font-size:.85rem}
 border-radius:3px;vertical-align:middle;margin-left:.35rem;overflow:hidden}
 .meter i{display:block;height:100%;background:var(--accent);border-radius:3px}
 .warn i{background:var(--warn)}.crit i{background:var(--kill)}
-/* theme picker */
-#theme{margin:0 0 .8rem}
-#theme button{display:inline-flex;align-items:center;gap:.45rem;background:transparent;color:var(--fg);
+/* theme picker and settings */
+#controls{display:flex;align-items:flex-start;gap:.5rem;margin:0 0 .8rem}
+#theme{margin:0;flex:1;min-width:0}
+#theme button,#schip{display:inline-flex;align-items:center;gap:.45rem;background:transparent;color:var(--fg);
 border:1px solid var(--line);border-radius:999px;padding:.3rem .75rem .3rem .4rem;font-size:.8rem}
-#theme button:hover{background:var(--barbg);color:var(--fg)}
+#theme button:hover,#schip:hover,#schip[aria-expanded=true]{background:var(--barbg);color:var(--fg)}
+#schip{padding-left:.7rem}
 #theme .sw{width:1rem;height:1rem;border-radius:50%;flex:none}
 #tchip .car{color:var(--dim);font-size:.7em;transition:transform .2s}
 #tchip[aria-expanded=true] .car{transform:rotate(180deg)}
@@ -1870,14 +1926,39 @@ border:1px solid var(--line);border-radius:999px;padding:.3rem .75rem .3rem .4re
 #tpanel .tg{display:grid;grid-template-columns:repeat(auto-fill,minmax(6.5rem,1fr));gap:.4rem}
 #tpanel button{border-radius:6px;min-height:2.3rem;width:100%;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
 #tpanel button.sel{border-color:var(--accent);color:var(--accent);box-shadow:inset 0 0 0 1px var(--accent)}
+#spanel{margin:-.25rem 0 1.2rem;padding:.85rem;border:1px solid var(--line);border-radius:8px;background:var(--bg)}
+#spanel[hidden],#startup-setting[hidden]{display:none}
+#startup-setting:not([hidden])+section{border-top:1px solid var(--line);margin-top:.9rem;padding-top:.9rem}
+#spanel h2{font-size:.8rem;color:var(--accent);margin:0 0 .65rem}
+#spanel .srow{display:flex;align-items:center;justify-content:space-between;gap:.75rem}
+#spanel form{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:.6rem;align-items:end}
+#spanel label{display:grid;gap:.3rem;color:var(--dim);font-size:.72rem}
+#spanel input{box-sizing:border-box;width:100%;min-width:0;background:var(--barbg);color:var(--fg);border:1px solid var(--line);
+border-radius:4px;padding:.45rem .55rem;font:inherit;letter-spacing:.18em}
+#spanel input:focus{outline:none;border-color:var(--accent)}
+#spanel button{background:transparent;color:var(--accent);border-color:var(--accent);padding:.4rem .65rem}
+#spanel form button{grid-column:1/-1;justify-self:start}
+#spanel button:hover{background:var(--accent);color:var(--bg)}
+#spanel button:disabled{opacity:.55;cursor:wait}
+#smsg{min-height:1.1rem;margin-top:.65rem;color:var(--accent);font-size:.75rem}
+#smsg.err{color:var(--kill)}
+@media (max-width:600px){#spanel form{grid-template-columns:1fr 1fr}#spanel label:first-child{grid-column:1/-1}
+#spanel .srow{align-items:flex-start}}
 #addons-top{margin:0 0 1.2rem}#addons-top:empty{display:none}
 #version{margin:1.6rem 0 .5rem;text-align:center;color:var(--dim);font-size:.75rem}
 .card[hidden],#t[hidden]{display:none!important}
 .fold::before{content:attr(data-f) " ";font-size:.75em}
 __FX__</style></head><body>
 <h1 data-host="__HOST__" data-lines="0">PinePorts — what's running on __HOST__</h1>
-<div id=theme><button id=tchip aria-expanded=false aria-controls=tpanel><span class=sw></span><span class=tn></span><span class=car>▼</span></button>
-<div id=tpanel hidden></div></div>
+<div id=controls><div id=theme><button id=tchip aria-expanded=false aria-controls=tpanel><span class=sw></span><span class=tn></span><span class=car>▼</span></button>
+<div id=tpanel hidden></div></div><button id=schip aria-expanded=false aria-controls=spanel>⚙ settings</button></div>
+<div id=spanel hidden>
+<section id=startup-setting hidden><h2>Windows startup</h2><div class=srow><span id=startup-state></span><button id=startup-toggle type=button></button></div></section>
+<section><h2>Change dashboard PIN</h2><form id=pin-form>
+<label>Current PIN<input id=pin-current type=password inputmode=numeric pattern="[0-9]{4}" minlength=4 maxlength=4 autocomplete=current-password required></label>
+<label>New PIN<input id=pin-new type=password inputmode=numeric pattern="[0-9]{4}" minlength=4 maxlength=4 autocomplete=new-password required></label>
+<label>Confirm PIN<input id=pin-confirm type=password inputmode=numeric pattern="[0-9]{4}" minlength=4 maxlength=4 autocomplete=new-password required></label>
+<button type=submit>change PIN</button></form></section><div id=smsg role=status aria-live=polite></div></div>
 <div id=stats></div>
 <div id=addons-top></div>
 <h2 style="font-size:.95rem;color:var(--accent);margin:0 0 .4rem"><span class=fold id=svc-fold style="cursor:pointer">Services</span></h2>
@@ -1973,10 +2054,49 @@ tpanel.innerHTML=[['Colors',['auto',...names.filter(t=>!GLOW.includes(t)&&!THEME
  .filter(([,ts])=>ts.length).map(([g,ts])=>`<h3>${g}</h3><div class=tg>`+ts.map(t=>
   `<button data-t="${t}" title="${t==='auto'?'follows your OS light/dark setting':t}"><span class=sw style="background:${swatch(t)}"></span>${t}</button>`).join('')+'</div>').join('');
 tpanel.querySelectorAll('button').forEach(el=>el.onclick=()=>applyTheme(el.dataset.t));
-function openPicker(o){tpanel.hidden=!o;tchip.setAttribute('aria-expanded',o)}
+const schip=document.querySelector('#schip'),spanel=document.querySelector('#spanel'),
+ startupSetting=document.querySelector('#startup-setting'),startupState=document.querySelector('#startup-state'),
+ startupToggle=document.querySelector('#startup-toggle'),smsg=document.querySelector('#smsg'),pinForm=document.querySelector('#pin-form');
+let startupEnabled=false;
+function settingsMessage(message,error=false){smsg.textContent=message;smsg.classList.toggle('err',error)}
+async function apiJson(url,options){
+ const r=await fetch(url,options),text=await r.text();let data={};
+ try{data=text?JSON.parse(text):{}}catch(e){data={error:text||'invalid server response'}}
+ if(!r.ok)throw new Error(data.error||'request failed');return data;}
+function renderStartup(startup){
+ startupEnabled=!!startup.enabled;startupState.textContent=startupEnabled?'Enabled — starts hidden at sign-in':'Disabled';
+ startupToggle.textContent=startupEnabled?'disable':'enable';startupToggle.hidden=false;startupToggle.disabled=false;}
+async function loadSettings(){
+ settingsMessage('');
+ try{const data=await apiJson('/api/settings');
+  if(!data.windows){startupSetting.hidden=true;return}
+  startupSetting.hidden=false;
+  if(data.startup&&data.startup.supported)renderStartup(data.startup);
+  else{startupState.textContent=data.startup&&data.startup.error||'Startup setting unavailable';startupToggle.hidden=true;}}
+ catch(e){settingsMessage(e.message,true)}}
+function openPicker(o){tpanel.hidden=!o;tchip.setAttribute('aria-expanded',o);if(o)openSettings(false)}
+function openSettings(o){spanel.hidden=!o;schip.setAttribute('aria-expanded',o);if(o){openPicker(false);loadSettings()}}
 tchip.onclick=()=>openPicker(tpanel.hidden);
-document.addEventListener('click',e=>{if(!tpanel.hidden&&!e.target.closest('#theme'))openPicker(false)});
-document.addEventListener('keydown',e=>{if(e.key==='Escape')openPicker(false)});
+schip.onclick=()=>openSettings(spanel.hidden);
+startupToggle.onclick=async()=>{
+ startupToggle.disabled=true;settingsMessage('');
+ try{const data=await apiJson('/api/settings/startup',{method:'POST',headers:{'Content-Type':'application/json'},
+   body:JSON.stringify({enabled:!startupEnabled})});renderStartup(data.startup);settingsMessage(startupEnabled?'Startup enabled.':'Startup disabled.');}
+ catch(e){startupToggle.disabled=false;settingsMessage(e.message,true)}};
+pinForm.onsubmit=async e=>{e.preventDefault();settingsMessage('');
+ const current=document.querySelector('#pin-current').value,next=document.querySelector('#pin-new').value,
+  confirmPin=document.querySelector('#pin-confirm').value;
+ if(!/^\d{4}$/.test(current)||!/^\d{4}$/.test(next)){settingsMessage('PINs must be exactly four digits.',true);return}
+ if(next!==confirmPin){settingsMessage('New PINs do not match.',true);return}
+ const submit=pinForm.querySelector('button');submit.disabled=true;
+ try{await apiJson('/api/settings/pin',{method:'POST',headers:{'Content-Type':'application/json'},
+   body:JSON.stringify({current_pin:current,new_pin:next,confirm_pin:confirmPin})});
+  pinForm.reset();settingsMessage('PIN changed. Returning to login…');setTimeout(()=>location.reload(),900);}
+ catch(e){submit.disabled=false;settingsMessage(e.message,true)}};
+document.addEventListener('click',e=>{
+ if(!tpanel.hidden&&!e.target.closest('#theme'))openPicker(false);
+ if(!spanel.hidden&&!e.target.closest('#spanel')&&!e.target.closest('#schip'))openSettings(false)});
+document.addEventListener('keydown',e=>{if(e.key==='Escape'){openPicker(false);openSettings(false)}});
 applyTheme(theme);
 /* add-ons — each registered one gets a card; built generically */
 function fmtLeft(s){if(s==null)return'';const h=Math.floor(s/3600),m=Math.floor(s%3600/60);
@@ -2104,6 +2224,21 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body.encode() if isinstance(body, str) else body)
 
+    def _send_json(self, code, data):
+        self._send(code, json.dumps(data), "application/json")
+
+    def _read_json(self, limit=4096):
+        try:
+            length = int(self.headers.get("Content-Length", 0))
+        except (TypeError, ValueError) as ex:
+            raise ValueError("invalid content length") from ex
+        if length < 1 or length > limit:
+            raise ValueError("invalid request size")
+        data = json.loads(self.rfile.read(length).decode())
+        if not isinstance(data, dict):
+            raise ValueError("request must be an object")
+        return data
+
     def do_GET(self):
         if self.path.split("?")[0] in ICON_PATHS:  # public: iOS fetches it without the cookie
             self.send_response(200)
@@ -2121,8 +2256,10 @@ class Handler(BaseHTTPRequestHandler):
             g = gather()
             self._send(200, json.dumps(
                 {"services": g, "total": sum(e["rss"] or 0 for e in g),
-                 "stats": sys_stats()}),
+                  "stats": sys_stats()}),
                 "application/json")
+        elif self.path == "/api/settings":
+            self._send_json(200, settings_snapshot())
         elif self.path.startswith("/api/addon/"):
             rest = self.path[len("/api/addon/"):]
             name, _, query = rest.partition("?")
@@ -2175,6 +2312,60 @@ class Handler(BaseHTTPRequestHandler):
             return
         if not check_auth(self):
             self._send(403, "not authorized", "text/plain")
+            return
+        if self.path == "/api/settings/startup":
+            if not IS_WIN:
+                self._send_json(404, {"error": "startup settings are available only on Windows"})
+                return
+            try:
+                req = self._read_json()
+                enabled = req["enabled"]
+                if not isinstance(enabled, bool):
+                    raise ValueError
+            except (ValueError, KeyError, TypeError, json.JSONDecodeError):
+                self._send_json(400, {"error": "enabled must be true or false"})
+                return
+            try:
+                actual = windows_startup("enable" if enabled else "disable")
+            except StartupError as ex:
+                self._send_json(500, {"error": str(ex)})
+                return
+            self._send_json(200, {"startup": {
+                "supported": True, "enabled": actual}})
+            return
+        if self.path == "/api/settings/pin":
+            try:
+                req = self._read_json()
+                current = req["current_pin"]
+                new = req["new_pin"]
+                confirm = req["confirm_pin"]
+                if not all(isinstance(pin, str)
+                           for pin in (current, new, confirm)):
+                    raise ValueError
+            except (ValueError, KeyError, TypeError, json.JSONDecodeError):
+                self._send_json(400, {"error": "invalid PIN change request"})
+                return
+            if any(len(pin) != 4 or not pin.isdigit()
+                   for pin in (current, new, confirm)):
+                self._send_json(400, {"error": "PINs must be exactly four digits"})
+                return
+            if new != confirm:
+                self._send_json(400, {"error": "new PINs do not match"})
+                return
+            result = try_login(current)
+            if result == "locked":
+                self._send_json(429, {"error": "too many tries, wait a few minutes"})
+                return
+            if result != "ok":
+                time.sleep(1)
+                self._send_json(403, {"error": "current PIN is incorrect"})
+                return
+            try:
+                save_pin(new)
+            except (OSError, ValueError) as ex:
+                self._send_json(500, {"error": str(ex)})
+                return
+            self._send_json(200, {"ok": True})
             return
         if self.path == "/api/kill":
             n = int(self.headers.get("Content-Length", 0))

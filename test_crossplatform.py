@@ -28,6 +28,11 @@ class Versioning(unittest.TestCase):
         self.assertIn(f"Version: {version}", pp.PAGE)
         self.assertNotIn("__VERSION__", pp.PAGE)
 
+    def test_dashboard_contains_settings_panel(self):
+        self.assertIn('id=schip', pp.PAGE)
+        self.assertIn('id=spanel', pp.PAGE)
+        self.assertIn('/api/settings/pin', pp.PAGE)
+
 
 class WinListeners(unittest.TestCase):
     def test_parses_listener_rows(self):
@@ -304,6 +309,46 @@ class PlatformConfig(unittest.TestCase):
             with open(pp.PIN_FILE) as f:
                 saved = f.read().strip()
         self.assertEqual(saved, hashlib.sha256(b"1234").hexdigest())
+
+    def test_save_pin_rejects_invalid_values(self):
+        for value in (None, 1234, "123", "12345", "12x4"):
+            with self.subTest(value=value), self.assertRaises(ValueError):
+                pp.save_pin(value)
+
+
+class WindowsStartupSettings(unittest.TestCase):
+    def test_linux_snapshot_hides_startup(self):
+        with mock.patch.object(pp, "IS_WIN", False):
+            self.assertEqual(pp.settings_snapshot(), {
+                "windows": False, "startup": {"supported": False}})
+
+    def test_windows_startup_invokes_manager_action(self):
+        completed = mock.MagicMock(returncode=0, stdout='{"enabled":true}\n',
+                                   stderr="")
+        with mock.patch.object(pp, "IS_WIN", True), \
+             mock.patch.object(pp.os.path, "isfile", return_value=True), \
+             mock.patch.object(pp.subprocess, "run", return_value=completed) as run:
+            self.assertTrue(pp.windows_startup("enable"))
+        command = run.call_args.args[0]
+        self.assertEqual(command[-1], "startup-enable")
+        self.assertIn(pp.WINDOWS_MANAGER, command)
+        self.assertEqual(run.call_args.kwargs["timeout"], 10)
+
+    def test_windows_startup_reports_manager_error(self):
+        completed = mock.MagicMock(returncode=1, stdout="", stderr="shortcut failed")
+        with mock.patch.object(pp, "IS_WIN", True), \
+             mock.patch.object(pp.os.path, "isfile", return_value=True), \
+             mock.patch.object(pp.subprocess, "run", return_value=completed), \
+             self.assertRaisesRegex(pp.StartupError, "shortcut failed"):
+            pp.windows_startup("disable")
+
+    def test_windows_snapshot_preserves_error(self):
+        with mock.patch.object(pp, "IS_WIN", True), \
+             mock.patch.object(pp, "windows_startup",
+                               side_effect=pp.StartupError("unavailable")):
+            self.assertEqual(pp.settings_snapshot(), {
+                "windows": True,
+                "startup": {"supported": False, "error": "unavailable"}})
 
 
 class NetStats(unittest.TestCase):

@@ -88,6 +88,14 @@ class WinSmoke(unittest.TestCase):
         port = server.server_address[1]
         try:
             conn = http.client.HTTPConnection("127.0.0.1", port, timeout=30)
+            conn.request("POST", "/api/settings/startup",
+                         body=json.dumps({"enabled": True}))
+            response = conn.getresponse()
+            self.assertEqual(response.status, 403)
+            response.read()
+            conn.close()
+
+            conn = http.client.HTTPConnection("127.0.0.1", port, timeout=30)
             conn.request("POST", "/api/login", body="1234")
             response = conn.getresponse()
             self.assertEqual(response.status, 200)
@@ -104,6 +112,28 @@ class WinSmoke(unittest.TestCase):
             self.assertIn("stats", data)
             conn.close()
 
+            with mock.patch.object(pp, "settings_snapshot", return_value={
+                    "windows": True,
+                    "startup": {"supported": True, "enabled": False}}):
+                conn = http.client.HTTPConnection("127.0.0.1", port, timeout=30)
+                conn.request("GET", "/api/settings", headers={"Cookie": cookie})
+                response = conn.getresponse()
+                self.assertEqual(response.status, 200)
+                settings = json.loads(response.read())
+                self.assertFalse(settings["startup"]["enabled"])
+                conn.close()
+
+            with mock.patch.object(pp, "windows_startup", return_value=True) as startup:
+                conn = http.client.HTTPConnection("127.0.0.1", port, timeout=30)
+                conn.request("POST", "/api/settings/startup",
+                             body=json.dumps({"enabled": True}),
+                             headers={"Cookie": cookie})
+                response = conn.getresponse()
+                self.assertEqual(response.status, 200)
+                self.assertTrue(json.loads(response.read())["startup"]["enabled"])
+                startup.assert_called_once_with("enable")
+                conn.close()
+
             with mock.patch.object(pp, "kill_port", return_value="stopped") as kill:
                 conn = http.client.HTTPConnection("127.0.0.1", port, timeout=30)
                 conn.request("POST", "/api/kill",
@@ -115,8 +145,42 @@ class WinSmoke(unittest.TestCase):
                 kill.assert_called_once_with("4321", 9876)
                 conn.close()
 
-            with open(pp.PIN_FILE, "w") as f:
-                f.write(hashlib.sha256(b"5678").hexdigest())
+            conn = http.client.HTTPConnection("127.0.0.1", port, timeout=30)
+            conn.request("POST", "/api/settings/pin",
+                         body=json.dumps({"current_pin": "1234",
+                                          "new_pin": "5678",
+                                          "confirm_pin": "5679"}),
+                         headers={"Cookie": cookie})
+            response = conn.getresponse()
+            self.assertEqual(response.status, 400)
+            self.assertIn(b"do not match", response.read())
+            conn.close()
+
+            with mock.patch.object(pp.time, "sleep"):
+                conn = http.client.HTTPConnection("127.0.0.1", port, timeout=30)
+                conn.request("POST", "/api/settings/pin",
+                             body=json.dumps({"current_pin": "9999",
+                                              "new_pin": "5678",
+                                              "confirm_pin": "5678"}),
+                             headers={"Cookie": cookie})
+                response = conn.getresponse()
+                self.assertEqual(response.status, 403)
+                self.assertIn(b"current PIN", response.read())
+                conn.close()
+
+            conn = http.client.HTTPConnection("127.0.0.1", port, timeout=30)
+            conn.request("POST", "/api/settings/pin",
+                         body=json.dumps({"current_pin": "1234",
+                                          "new_pin": "5678",
+                                          "confirm_pin": "5678"}),
+                         headers={"Cookie": cookie})
+            response = conn.getresponse()
+            self.assertEqual(response.status, 200)
+            self.assertTrue(json.loads(response.read())["ok"])
+            conn.close()
+            with open(pp.PIN_FILE) as f:
+                self.assertEqual(f.read().strip(), hashlib.sha256(b"5678").hexdigest())
+
             conn = http.client.HTTPConnection("127.0.0.1", port, timeout=30)
             conn.request("GET", "/api/services", headers={"Cookie": cookie})
             response = conn.getresponse()

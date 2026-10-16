@@ -1,6 +1,7 @@
 param(
     [Parameter(Mandatory = $true, Position = 0)]
-    [ValidateSet('start', 'stop', 'restart', 'test')]
+    [ValidateSet('start', 'stop', 'restart', 'open', 'settings', 'test',
+                 'startup-status', 'startup-enable', 'startup-disable')]
     [string]$Action
 )
 
@@ -15,6 +16,13 @@ $pidFile = Join-Path $configDir 'pineports.pid'
 $stdoutLog = Join-Path $configDir 'pineports.stdout.log'
 $stderrLog = Join-Path $configDir 'pineports.stderr.log'
 $webPort = 6310
+$dashboardUrl = "http://localhost:$webPort/"
+$startupDirectory = [Environment]::GetFolderPath([Environment+SpecialFolder]::Startup)
+$startupShortcut = if ($startupDirectory) {
+    Join-Path $startupDirectory 'PinePort.lnk'
+} else {
+    $null
+}
 
 function Resolve-Python3 {
     $candidates = @(Get-Command python.exe -All -ErrorAction SilentlyContinue |
@@ -94,13 +102,60 @@ function ConvertTo-ArgumentString {
     }) -join ' ')
 }
 
+function Get-PinePortStartupArguments {
+    $scriptPath = Join-Path $PSScriptRoot 'pineports.ps1'
+    return '-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File "' +
+        $scriptPath + '" start'
+}
+
+function Test-PinePortStartup {
+    if ([string]::IsNullOrWhiteSpace($script:startupShortcut)) { return $false }
+    return Test-Path -LiteralPath $script:startupShortcut -PathType Leaf
+}
+
+function Enable-PinePortStartup {
+    if ([string]::IsNullOrWhiteSpace($script:startupShortcut)) {
+        throw 'The Windows Startup folder could not be found.'
+    }
+
+    [IO.Directory]::CreateDirectory((Split-Path -Parent $script:startupShortcut)) |
+        Out-Null
+    $powershell = (Get-Command powershell.exe -ErrorAction Stop).Source
+    $shell = New-Object -ComObject WScript.Shell
+    $shortcut = $shell.CreateShortcut($script:startupShortcut)
+    $shortcut.TargetPath = $powershell
+    $shortcut.Arguments = Get-PinePortStartupArguments
+    $shortcut.WorkingDirectory = $repoRoot
+    $shortcut.WindowStyle = 7
+    $shortcut.Description = 'Start PinePort in the background at Windows sign-in'
+    $shortcut.Save()
+}
+
+function Disable-PinePortStartup {
+    if ([string]::IsNullOrWhiteSpace($script:startupShortcut)) {
+        throw 'The Windows Startup folder could not be found.'
+    }
+    Remove-Item -LiteralPath $script:startupShortcut -Force -ErrorAction SilentlyContinue
+}
+
+function Write-PinePortStartupStatus {
+    [pscustomobject]@{
+        enabled = [bool](Test-PinePortStartup)
+    } | ConvertTo-Json -Compress
+}
+
+function Set-PinePortPin {
+    $python = Resolve-Python3
+    Invoke-Python $python @($pineports, '--set-pin')
+    Write-Host 'Dashboard PIN changed. Existing browser sessions must sign in again.'
+}
+
 function Start-PinePort {
     $existing = Get-PinePortProcess
     if ($existing) {
         [IO.Directory]::CreateDirectory($configDir) | Out-Null
         Set-Content -LiteralPath $pidFile -Value $existing.ProcessId
         Write-Host "PinePort is already running (pid $($existing.ProcessId))."
-        Start-Process "http://localhost:$webPort/"
         return
     }
 
@@ -139,8 +194,19 @@ function Start-PinePort {
 
     Set-Content -LiteralPath $pidFile -Value $listenerProcess.ProcessId
     Write-Host "PinePort started (pid $($listenerProcess.ProcessId))."
-    Write-Host "Dashboard: http://localhost:$webPort/"
-    Start-Process "http://localhost:$webPort/"
+    Write-Host "Dashboard: $dashboardUrl"
+}
+
+function Open-PinePort {
+    if (-not (Get-PinePortProcess)) {
+        Write-Host 'PinePort is not running; starting it now.'
+        Start-PinePort
+    }
+    else {
+        Write-Host 'PinePort is already running.'
+    }
+    Write-Host "Opening $dashboardUrl"
+    Start-Process $dashboardUrl
 }
 
 function Stop-PinePort {
@@ -164,10 +230,108 @@ function Stop-PinePort {
     Write-Host "PinePort stopped (pid $processId)."
 }
 
+function Show-PinePortSettings {
+    while ($true) {
+        $startupState = if (Test-PinePortStartup) { 'enabled' } else { 'disabled' }
+        $startupAction = if (Test-PinePortStartup) { 'Disable' } else { 'Enable' }
+
+        Write-Host ''
+        Write-Host 'PinePort settings'
+        Write-Host '-----------------'
+        Write-Host "Launch at Windows sign-in: $startupState"
+        Write-Host ''
+        Write-Host "1. $startupAction launch at Windows sign-in"
+        Write-Host '2. Change dashboard PIN'
+        Write-Host '3. Exit'
+        Write-Host ''
+
+        $choice = [string](Read-Host 'Choose an option')
+        switch ($choice.Trim().ToLowerInvariant()) {
+            '1' {
+                if (Test-PinePortStartup) {
+                    Disable-PinePortStartup
+                    Write-Host 'PinePort will no longer start at Windows sign-in.'
+                }
+                else {
+                    if (-not (Test-Path -LiteralPath $pinFile -PathType Leaf)) {
+                        Write-Host 'Set a dashboard PIN before enabling automatic startup.'
+                        Set-PinePortPin
+                    }
+                    Enable-PinePortStartup
+                    Write-Host 'PinePort will now start in the background at Windows sign-in.'
+                }
+            }
+            '2' { Set-PinePortPin }
+            '3' { return }
+            'q' { return }
+            'quit' { return }
+            default { Write-Warning 'Choose 1, 2, or 3.' }
+        }
+    }
+}
+
+function Test-WindowsLaunchers {
+    $expectedLaunchers = @{
+        'start-pineports.cmd' = 'start'
+        'stop-pineports.cmd' = 'stop'
+        'restart-pineports.cmd' = 'restart'
+        'open-pineports.cmd' = 'open'
+        'settings-pineports.cmd' = 'settings'
+        'test-pineports.cmd' = 'test'
+    }
+    foreach ($entry in $expectedLaunchers.GetEnumerator()) {
+        $path = Join-Path $repoRoot $entry.Key
+        if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
+            throw "Missing Windows launcher: $($entry.Key)"
+        }
+        $content = Get-Content -LiteralPath $path -Raw
+        $expected = 'pineports.ps1" ' + $entry.Value
+        if ($content -notlike "*$expected*") {
+            throw "$($entry.Key) does not invoke the '$($entry.Value)' action."
+        }
+    }
+
+    $originalShortcut = $script:startupShortcut
+    $testDirectory = Join-Path ([IO.Path]::GetTempPath()) (
+        'pineports-launcher-test-' + [guid]::NewGuid().ToString('N'))
+    try {
+        [IO.Directory]::CreateDirectory($testDirectory) | Out-Null
+        $script:startupShortcut = Join-Path $testDirectory 'PinePort.lnk'
+        Enable-PinePortStartup
+        if (-not (Test-PinePortStartup)) {
+            throw 'Enabling startup did not create the shortcut.'
+        }
+
+        $shell = New-Object -ComObject WScript.Shell
+        $shortcut = $shell.CreateShortcut($script:startupShortcut)
+        $powershell = (Get-Command powershell.exe -ErrorAction Stop).Source
+        if ($shortcut.TargetPath -ine $powershell) {
+            throw 'The startup shortcut does not target Windows PowerShell.'
+        }
+        if ($shortcut.Arguments -cne (Get-PinePortStartupArguments)) {
+            throw 'The startup shortcut has unexpected arguments.'
+        }
+        if ($shortcut.WorkingDirectory -ine $repoRoot) {
+            throw 'The startup shortcut has the wrong working directory.'
+        }
+
+        Disable-PinePortStartup
+        if (Test-PinePortStartup) {
+            throw 'Disabling startup did not remove the shortcut.'
+        }
+    }
+    finally {
+        $script:startupShortcut = $originalShortcut
+        Remove-Item -LiteralPath $testDirectory -Recurse -Force -ErrorAction SilentlyContinue
+    }
+}
+
 function Test-PinePort {
     $python = Resolve-Python3
     Push-Location $repoRoot
     try {
+        Write-Host 'Running Windows launcher tests...'
+        Test-WindowsLaunchers
         Write-Host 'Running cross-platform tests...'
         Invoke-Python $python @((Join-Path $repoRoot 'test_crossplatform.py'))
         Write-Host 'Running real-Windows tests...'
@@ -183,6 +347,17 @@ try {
     switch ($Action) {
         'start' { Start-PinePort }
         'stop' { Stop-PinePort }
+        'open' { Open-PinePort }
+        'settings' { Show-PinePortSettings }
+        'startup-status' { Write-PinePortStartupStatus }
+        'startup-enable' {
+            Enable-PinePortStartup
+            Write-PinePortStartupStatus
+        }
+        'startup-disable' {
+            Disable-PinePortStartup
+            Write-PinePortStartupStatus
+        }
         'restart' {
             Stop-PinePort
             Start-PinePort

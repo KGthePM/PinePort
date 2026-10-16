@@ -14,6 +14,7 @@ Listener overview for the box it runs on — what's running, on which ports, how
   - Kill buttons hidden for system services (cupsd, avahi, tailscaled, AdGuardHome, systemd)
   - Stats bar: CPU/RAM/disk % with meters, load, uptime — read from `/proc` per poll, no daemons
   - Theme picker: midnight/forest/paper/plum/nord/gruvbox/dracula/solarized/phosphor/amber/contrast, plus four animated themes: Retro (CRT monitor), Departures (split-flap airport board; changed values flip, new ports show BOARDING), Wasteland (rusted riveted plate with falling ash and a flickering generator; new ports glow as SIGNAL) and Tetromino (8-bit Tetris well with a pixel font; each row gets a piece, new services drop in, a stopped one flashes and clears like a line, kill reads DROP, new ports NEXT). Saved in localStorage `pp_theme`
+  - Authenticated settings panel: change the dashboard PIN; on Windows, enable or disable hidden launch at sign-in using the same managed shortcut as the desktop settings launcher
   - Add-on system: `_find_addons()` probes PATH at startup (`shutil.which`); found tool → card + `/api/addon/<name>` route, absent → quietly skipped. Contract: CLI prints JSON, supports `--cached` (fast, no network) and bare invocation (live, own cooldowns). Registry in `ADDONS` dict; renderers in `CARD_RENDER` (generic JSON dump fallback). First add-on: [Needle](https://github.com/KGthePM/Needle) (AI usage gauge). Second: `pineports-docker` (real container CPU/RAM via `docker stats --no-stream`). Third: `pineports-gpu` (GPU util %, VRAM used/total, temp, power, fan via `nvidia-smi`; NVIDIA driver required — absent → card skipped).
   - New-listener badge: ports first seen < 24h ago get a `new` badge — labeled ports and ephemeral ports (≥ 32768, VS Code/Firefox) are exempt. History in `~/.config/pineports-seen.json`.
 
@@ -49,9 +50,11 @@ for process names/RAM and the stats bar:
 ```powershell
 git clone https://github.com/KGthePM/PinePort.git; cd PinePort
 python -m pip install psutil
-.\start-pineports.cmd      # prompt for a PIN if needed, start, open dashboard
-.\restart-pineports.cmd    # reload PinePort and newly installed add-ons
+.\open-pineports.cmd       # start if needed, then open the dashboard
+.\start-pineports.cmd      # start in the background without opening a browser
+.\restart-pineports.cmd    # reload PinePort and newly installed add-ons in the background
 .\stop-pineports.cmd
+.\settings-pineports.cmd   # automatic startup and dashboard PIN settings
 .\test-pineports.cmd       # cross-platform + real-Windows test suites
 ```
 
@@ -63,8 +66,11 @@ python -m pip install psutil
 - Manual commands remain available: `python pineports`,
   `python pineports --set-pin`, `python pineports kill <port>`, and
   `python pineports --web`.
-- **Run at startup (optional):** press `Win+R`, type `shell:startup`, and put a
-  shortcut to `pythonw.exe "<path>\pineports" --web` in that folder.
+- **Settings and startup:** use the dashboard's **settings** panel or open
+  `settings-pineports.cmd` to change the dashboard PIN and enable or disable
+  launch at Windows sign-in. PinePort creates a current-user Startup-folder
+  shortcut and starts hidden without opening a browser; no administrator
+  access is needed. The dashboard requires the current PIN before changing it.
 - **Full-kill parity:** your own processes die with one click. Killing another
   user's process needs an elevated console (`Run as administrator`) — the UI
   tells you when that's the case.
@@ -86,10 +92,10 @@ python -m pip install psutil
 
 1. `test-pineports.cmd` — all tests pass
 2. `python pineports` — table lists listeners with names + RAM
-3. `python pineports --web` → log in with your PIN → services + stats bar render
+3. `open-pineports.cmd` → log in with your PIN → services + stats bar render
 4. Kill a test server you started yourself (the smoke test does this too)
 5. Kill a Docker-published port → container stops
-6. (Optional, if in a startup shortcut) reboot → dashboard is up without login
+6. (Optional, if enabled in settings) sign out and back in → dashboard server is running
 
 
 ## Notes
