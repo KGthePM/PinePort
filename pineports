@@ -45,7 +45,7 @@ except ImportError:
 # Windows keeps the same filenames under %APPDATA%\pineports\; Linux keeps
 # ~/.config/ as before. One base dir, computed once.
 IS_WIN = sys.platform == "win32"
-VERSION = "0.11.0"
+VERSION = "0.11.1"
 ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
 WINDOWS_MANAGER = os.path.join(ROOT_DIR, "windows", "pineports.ps1")
 
@@ -2614,6 +2614,8 @@ class Handler(BaseHTTPRequestHandler):
         self.send_response(code)
         self.send_header("Content-Type", ctype)
         self.end_headers()
+        if self.command == "HEAD":
+            return  # HEAD = headers only; a body on the wire breaks keep-alive clients
         self.wfile.write(body.encode() if isinstance(body, str) else body)
 
     def _send_json(self, code, data):
@@ -2631,13 +2633,19 @@ class Handler(BaseHTTPRequestHandler):
             raise ValueError("request must be an object")
         return data
 
+    def do_HEAD(self):
+        # iOS's home-screen icon fetcher probes with HEAD before GET; without
+        # this it gets a 501 and falls back to the generic letter tile.
+        self.do_GET()
+
     def do_GET(self):
         if self.path.split("?")[0] in ICON_PATHS:  # public: iOS fetches it without the cookie
             self.send_response(200)
             self.send_header("Content-Type", "image/png")
             self.send_header("Cache-Control", "max-age=86400")
             self.end_headers()
-            self.wfile.write(ICON_PNG)
+            if self.command != "HEAD":
+                self.wfile.write(ICON_PNG)
             return
         if self.path.split("?")[0] == "/ca.crt":  # public: download the CA to trust it
             try:
