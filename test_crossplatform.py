@@ -428,6 +428,35 @@ class HTTPS(unittest.TestCase):
                     thread.join(timeout=5)
                     pp.SESSIONS.clear()
 
+    def test_ca_certificate_download_is_public(self):
+        with tempfile.TemporaryDirectory() as td:
+            patches = self._tls_patches(td)
+            with patches[0], patches[1], patches[2], patches[3]:
+                server = pp.create_https_server(("127.0.0.1", 0))
+                thread = threading.Thread(target=server.serve_forever, daemon=True)
+                thread.start()
+                port = server.server_address[1]
+                try:
+                    context = ssl.create_default_context(cafile=pp.CA_CERT_FILE)
+                    conn = http.client.HTTPSConnection(
+                        "localhost", port, context=context, timeout=10)
+                    # No session cookie: the route must be public like the icons.
+                    conn.request("GET", "/ca.crt")
+                    response = conn.getresponse()
+                    body = response.read()
+                    self.assertEqual(response.status, 200)
+                    self.assertEqual(response.getheader("Content-Type"),
+                                     "application/x-x509-ca-cert")
+                    self.assertIn("attachment", response.getheader(
+                        "Content-Disposition") or "")
+                    with open(pp.CA_CERT_FILE, "rb") as f:
+                        self.assertEqual(body, f.read())
+                    conn.close()
+                finally:
+                    server.shutdown()
+                    server.server_close()
+                    thread.join(timeout=5)
+
 
 class WindowsStartupSettings(unittest.TestCase):
     def test_linux_snapshot_hides_startup(self):

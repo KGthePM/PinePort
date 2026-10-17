@@ -45,7 +45,7 @@ except ImportError:
 # Windows keeps the same filenames under %APPDATA%\pineports\; Linux keeps
 # ~/.config/ as before. One base dir, computed once.
 IS_WIN = sys.platform == "win32"
-VERSION = "0.10.0"
+VERSION = "0.11.0"
 ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
 WINDOWS_MANAGER = os.path.join(ROOT_DIR, "windows", "pineports.ps1")
 
@@ -2638,6 +2638,20 @@ class Handler(BaseHTTPRequestHandler):
             self.send_header("Cache-Control", "max-age=86400")
             self.end_headers()
             self.wfile.write(ICON_PNG)
+            return
+        if self.path.split("?")[0] == "/ca.crt":  # public: download the CA to trust it
+            try:
+                with open(CA_CERT_FILE, "rb") as f:
+                    ca_bytes = f.read()
+            except OSError:
+                self._send(404, "CA certificate not found", "text/plain")
+                return
+            self.send_response(200)
+            self.send_header("Content-Type", "application/x-x509-ca-cert")
+            self.send_header("Content-Disposition",
+                             'attachment; filename="pineports-ca.crt"')
+            self.end_headers()
+            self.wfile.write(ca_bytes)
             return
         if not check_auth(self):
             self._send(200, LOGIN_PAGE)

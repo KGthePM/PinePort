@@ -64,15 +64,32 @@ https://<LAN-or-VPN-IP>:6310
 
 A browser initially warns that the local CA is not trusted. You may proceed
 through that warning, or install the **public** CA certificate on a client to
-get an identity-verified connection without warnings:
+get an identity-verified connection without warnings. The easiest way is to
+open this address in the client's browser and download the file:
+
+```text
+https://<host>:6310/ca.crt
+```
+
+Before the CA is trusted, the client browser warns about that address too;
+proceeding through the warning once is enough to download the file. The same
+file lives on the host at:
 
 - Linux host: `~/.config/pineports-ca.crt`
 - Windows host: `%APPDATA%\pineports\pineports-ca.crt`
 
 Copy only `pineports-ca.crt` to computers or phones. Never copy
 `pineports-ca.key` or `pineports-tls.key`; those private keys must remain on the
-PinePort host. Trust-store steps vary by browser and mobile OS. On Windows, the
-current user can trust the CA with:
+PinePort host. Trust-store steps vary by browser and mobile OS:
+
+- **iPhone/iPad (Safari):** open the downloaded `.crt` (or AirDrop/email it),
+  install the profile iOS offers, then turn on full trust under
+  Settings → General → About → **Certificate Trust Settings**. Installing the
+  profile alone is not enough, and Safari can look completely fine without the
+  toggle — it may never warn again after one bypass — yet "Add to Home Screen"
+  still saves a blank tile instead of the app icon. After enabling the toggle,
+  delete any home-screen tile added earlier and add it again.
+- **Windows:** the current user can trust the CA with:
 
 ```powershell
 certutil -user -addstore Root "$env:APPDATA\pineports\pineports-ca.crt"
