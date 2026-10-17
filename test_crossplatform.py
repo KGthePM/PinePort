@@ -8,7 +8,7 @@ test_windows.py; Linux behavior by test_easywins.py / test_addon_path.py.
 
 Run: python3 test_crossplatform.py
 """
-import hashlib, importlib.machinery, importlib.util, json, os, subprocess, sys, tempfile, unittest
+import hashlib, http.client, importlib.machinery, importlib.util, json, os, ssl, subprocess, sys, tempfile, threading, unittest
 from unittest import mock
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -315,12 +315,118 @@ class PlatformConfig(unittest.TestCase):
             pp.set_pin()
             with open(pp.PIN_FILE) as f:
                 saved = f.read().strip()
-        self.assertEqual(saved, hashlib.sha256(b"1234").hexdigest())
+        self.assertTrue(saved.startswith("$argon2id$v=19$"))
+        self.assertEqual(pp._verify_pin_record("1234", saved), (True, False))
 
     def test_save_pin_rejects_invalid_values(self):
-        for value in (None, 1234, "123", "12345", "12x4"):
+        for value in (None, 1234, "123", "12345", "12x4", "１２３４"):
             with self.subTest(value=value), self.assertRaises(ValueError):
                 pp.save_pin(value)
+
+    def test_pin_records_use_random_16_byte_salts(self):
+        first = pp.make_pin_record("1234")
+        second = pp.make_pin_record("1234")
+        self.assertNotEqual(first, second)
+        self.assertEqual(pp._parse_argon2_record(first),
+                         (65536, 3, 1, 16, 32))
+        self.assertEqual(pp._verify_pin_record("1234", first), (True, False))
+        self.assertEqual(pp._verify_pin_record("9999", first), (False, False))
+
+    def test_legacy_sha256_migrates_after_successful_login(self):
+        legacy = hashlib.sha256(b"1234").hexdigest()
+        with tempfile.TemporaryDirectory() as td, \
+             mock.patch.object(pp, "PIN_FILE", os.path.join(td, "pin")), \
+             mock.patch.object(pp, "_login_fails", 0), \
+             mock.patch.object(pp, "_login_locked_until", 0.0):
+            with open(pp.PIN_FILE, "w", encoding="ascii") as f:
+                f.write(legacy + "\n")
+            self.assertEqual(pp.try_login("1234"), "ok")
+            migrated = pp.pin_hash()
+        self.assertTrue(migrated.startswith("$argon2id$v=19$"))
+        self.assertEqual(pp._verify_pin_record("1234", migrated), (True, False))
+
+    def test_unsafe_argon2_parameters_are_rejected_before_verification(self):
+        record = "$argon2id$v=19$m=999999999,t=3,p=1$MDAwMDAwMDAwMDAwMDAwMA$MDAwMDAwMDAwMDAwMDAwMA"
+        fake_argon2 = mock.Mock()
+        with mock.patch.object(pp, "Argon2id", fake_argon2):
+            self.assertEqual(pp._verify_pin_record("1234", record),
+                             (False, False))
+        fake_argon2.verify_phc_encoded.assert_not_called()
+
+
+class HTTPS(unittest.TestCase):
+    def _tls_patches(self, directory):
+        return (
+            mock.patch.object(pp, "CA_KEY_FILE", os.path.join(directory, "ca.key")),
+            mock.patch.object(pp, "CA_CERT_FILE", os.path.join(directory, "ca.crt")),
+            mock.patch.object(pp, "TLS_KEY_FILE", os.path.join(directory, "tls.key")),
+            mock.patch.object(pp, "TLS_CERT_FILE", os.path.join(directory, "tls.crt")),
+        )
+
+    def test_certificate_generation_preserves_ca_and_adds_new_sans(self):
+        with tempfile.TemporaryDirectory() as td:
+            patches = self._tls_patches(td)
+            with patches[0], patches[1], patches[2], patches[3]:
+                pp.ensure_tls_certificate()
+                with open(pp.CA_CERT_FILE, "rb") as f:
+                    original_ca = f.read()
+                with open(pp.TLS_CERT_FILE, "rb") as f:
+                    original_server = f.read()
+
+                with mock.patch.dict(os.environ, {
+                        "PINEPORT_TLS_NAMES": "pineport.test,10.23.45.67"}):
+                    pp.ensure_tls_certificate()
+                with open(pp.CA_CERT_FILE, "rb") as f:
+                    self.assertEqual(f.read(), original_ca)
+                with open(pp.TLS_CERT_FILE, "rb") as f:
+                    renewed_server = f.read()
+                self.assertNotEqual(renewed_server, original_server)
+                certificate = pp._read_certificate(pp.TLS_CERT_FILE)
+                san = certificate.extensions.get_extension_for_class(
+                    pp.x509.SubjectAlternativeName).value
+                self.assertIn("pineport.test",
+                              san.get_values_for_type(pp.x509.DNSName))
+                self.assertIn("10.23.45.67", [str(value) for value in
+                              san.get_values_for_type(pp.x509.IPAddress)])
+
+    def test_https_login_trust_and_plaintext_rejection(self):
+        with tempfile.TemporaryDirectory() as td:
+            patches = self._tls_patches(td)
+            pin_patch = mock.patch.object(pp, "PIN_FILE", os.path.join(td, "pin"))
+            with patches[0], patches[1], patches[2], patches[3], pin_patch, \
+                 mock.patch.object(pp, "_login_fails", 0), \
+                 mock.patch.object(pp, "_login_locked_until", 0.0):
+                pp.SESSIONS.clear()
+                pp.save_pin("1234")
+                server = pp.create_https_server(("127.0.0.1", 0))
+                thread = threading.Thread(target=server.serve_forever, daemon=True)
+                thread.start()
+                port = server.server_address[1]
+                try:
+                    context = ssl.create_default_context(cafile=pp.CA_CERT_FILE)
+                    conn = http.client.HTTPSConnection(
+                        "localhost", port, context=context, timeout=10)
+                    conn.request("POST", "/api/login", body="1234")
+                    response = conn.getresponse()
+                    self.assertEqual(response.status, 200)
+                    cookie = response.getheader("Set-Cookie")
+                    self.assertIn("; Secure;", cookie)
+                    response.read()
+                    conn.close()
+
+                    plaintext = http.client.HTTPConnection(
+                        "127.0.0.1", port, timeout=10)
+                    plaintext.request("GET", "/")
+                    with self.assertRaises((ConnectionError,
+                                            http.client.RemoteDisconnected,
+                                            ssl.SSLError)):
+                        plaintext.getresponse()
+                    plaintext.close()
+                finally:
+                    server.shutdown()
+                    server.server_close()
+                    thread.join(timeout=5)
+                    pp.SESSIONS.clear()
 
 
 class WindowsStartupSettings(unittest.TestCase):

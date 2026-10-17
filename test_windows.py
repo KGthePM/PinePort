@@ -2,9 +2,9 @@
 """Real-Windows smoke test for PinePort. Skips on other OSes.
 
 Run on a Windows box with:  python test_windows.py
-Requires psutil:  python -m pip install psutil
+Requires project dependencies:  python -m pip install -r requirements.txt
 """
-import hashlib, http.client, json, os, subprocess, sys, tempfile, threading, time, unittest
+import hashlib, http.client, json, os, ssl, subprocess, sys, tempfile, threading, time, unittest
 from unittest import mock
 
 IS_WIN = sys.platform == "win32"
@@ -82,12 +82,15 @@ class WinSmoke(unittest.TestCase):
     def test_web_login_and_services(self):
         with open(pp.PIN_FILE, "w") as f:
             f.write(hashlib.sha256(b"1234").hexdigest())
-        server = pp.ThreadingHTTPServer(("127.0.0.1", 0), pp.Handler)
+        server = pp.create_https_server(("127.0.0.1", 0))
         thread = threading.Thread(target=server.serve_forever, daemon=True)
         thread.start()
         port = server.server_address[1]
+        context = ssl.create_default_context(cafile=pp.CA_CERT_FILE)
+        connection = lambda: http.client.HTTPSConnection(
+            "localhost", port, context=context, timeout=30)
         try:
-            conn = http.client.HTTPConnection("127.0.0.1", port, timeout=30)
+            conn = connection()
             conn.request("POST", "/api/settings/startup",
                          body=json.dumps({"enabled": True}))
             response = conn.getresponse()
@@ -95,15 +98,17 @@ class WinSmoke(unittest.TestCase):
             response.read()
             conn.close()
 
-            conn = http.client.HTTPConnection("127.0.0.1", port, timeout=30)
+            conn = connection()
             conn.request("POST", "/api/login", body="1234")
             response = conn.getresponse()
             self.assertEqual(response.status, 200)
-            cookie = response.getheader("Set-Cookie").split(";", 1)[0]
+            set_cookie = response.getheader("Set-Cookie")
+            self.assertIn("; Secure;", set_cookie)
+            cookie = set_cookie.split(";", 1)[0]
             response.read()
             conn.close()
 
-            conn = http.client.HTTPConnection("127.0.0.1", port, timeout=30)
+            conn = connection()
             conn.request("GET", "/api/services", headers={"Cookie": cookie})
             response = conn.getresponse()
             self.assertEqual(response.status, 200)
@@ -115,7 +120,7 @@ class WinSmoke(unittest.TestCase):
             with mock.patch.object(pp, "settings_snapshot", return_value={
                     "windows": True,
                     "startup": {"supported": True, "enabled": False}}):
-                conn = http.client.HTTPConnection("127.0.0.1", port, timeout=30)
+                conn = connection()
                 conn.request("GET", "/api/settings", headers={"Cookie": cookie})
                 response = conn.getresponse()
                 self.assertEqual(response.status, 200)
@@ -124,7 +129,7 @@ class WinSmoke(unittest.TestCase):
                 conn.close()
 
             with mock.patch.object(pp, "windows_startup", return_value=True) as startup:
-                conn = http.client.HTTPConnection("127.0.0.1", port, timeout=30)
+                conn = connection()
                 conn.request("POST", "/api/settings/startup",
                              body=json.dumps({"enabled": True}),
                              headers={"Cookie": cookie})
@@ -135,7 +140,7 @@ class WinSmoke(unittest.TestCase):
                 conn.close()
 
             with mock.patch.object(pp, "kill_port", return_value="stopped") as kill:
-                conn = http.client.HTTPConnection("127.0.0.1", port, timeout=30)
+                conn = connection()
                 conn.request("POST", "/api/kill",
                              body=json.dumps({"port": "4321", "pid": "9876"}),
                              headers={"Cookie": cookie})
@@ -145,7 +150,7 @@ class WinSmoke(unittest.TestCase):
                 kill.assert_called_once_with("4321", 9876)
                 conn.close()
 
-            conn = http.client.HTTPConnection("127.0.0.1", port, timeout=30)
+            conn = connection()
             conn.request("POST", "/api/settings/pin",
                          body=json.dumps({"current_pin": "1234",
                                           "new_pin": "5678",
@@ -157,7 +162,7 @@ class WinSmoke(unittest.TestCase):
             conn.close()
 
             with mock.patch.object(pp.time, "sleep"):
-                conn = http.client.HTTPConnection("127.0.0.1", port, timeout=30)
+                conn = connection()
                 conn.request("POST", "/api/settings/pin",
                              body=json.dumps({"current_pin": "9999",
                                               "new_pin": "5678",
@@ -168,7 +173,7 @@ class WinSmoke(unittest.TestCase):
                 self.assertIn(b"current PIN", response.read())
                 conn.close()
 
-            conn = http.client.HTTPConnection("127.0.0.1", port, timeout=30)
+            conn = connection()
             conn.request("POST", "/api/settings/pin",
                          body=json.dumps({"current_pin": "1234",
                                           "new_pin": "5678",
@@ -179,9 +184,11 @@ class WinSmoke(unittest.TestCase):
             self.assertTrue(json.loads(response.read())["ok"])
             conn.close()
             with open(pp.PIN_FILE) as f:
-                self.assertEqual(f.read().strip(), hashlib.sha256(b"5678").hexdigest())
+                saved = f.read().strip()
+            self.assertEqual(pp._verify_pin_record("5678", saved), (True, False))
+            self.assertTrue(saved.startswith("$argon2id$v=19$"))
 
-            conn = http.client.HTTPConnection("127.0.0.1", port, timeout=30)
+            conn = connection()
             conn.request("GET", "/api/services", headers={"Cookie": cookie})
             response = conn.getresponse()
             self.assertIn(b"<form", response.read())
@@ -201,14 +208,20 @@ class WinSmoke(unittest.TestCase):
         try:
             port = int(child.stdout.readline().strip())
             deadline = time.time() + 10
+            owner_pid = None
             while time.time() < deadline:
-                if any(pid == child.pid and p == port
-                       for pid, p, _ext in pp.win_listeners()):
+                owner_pid = next((pid for pid, found_port, _ext
+                                  in pp.win_listeners()
+                                  if found_port == port), None)
+                if owner_pid is not None:
                     break
                 time.sleep(0.1)
             else:
                 self.fail(f"child listener :{port} was not discovered")
-            msg = pp.win_kill_port(port, child.pid)
+            # A Windows venv redirector can have a different pid from the
+            # base-python process that owns the socket; exercise the actual
+            # listener pid, just as the dashboard does.
+            msg = pp.win_kill_port(port, owner_pid)
             self.assertIn("stopped", msg.lower())
             child.wait(timeout=10)
         finally:

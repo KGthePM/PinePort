@@ -47,9 +47,9 @@ print("4. ephemeral port :40000 not badged — OK")
 # 5. addons registry includes docker helper when installed
 print(f"5. ADDONS found: {sorted(pp.ADDONS)}")
 
-# 6. PAGE carries the badge CSS + docker renderer + threading server class
+# 6. PAGE carries the badge CSS + docker renderer + TLS threading server class
 src = open("/home/kg/PinePort/pineports").read()
-for needle in ('class="badge">new', "docker:(box,d)=>", "ThreadingHTTPServer(("):
+for needle in ('class="badge">new', "docker:(box,d)=>", "class TLSThreadingHTTPServer"):
     assert needle in src, f"missing: {needle}"
 print("6. PAGE + server edits present — OK")
 

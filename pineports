@@ -4,11 +4,37 @@
 Usage:
   ports                 show table
   ports kill <port>     stop whatever listens on <port>
-  ports -w / --web      serve web UI on :6310 (for LAN/Tailscale)
+  ports -w / --web      serve HTTPS web UI on :6310
   ports --set-pin       create or replace the web UI PIN
 """
-import subprocess, os, sys, signal, json, hashlib, secrets, time, shutil, threading, socket, base64
+import sys
+if sys.version_info < (3, 11):
+    raise SystemExit("PinePort requires Python 3.11 or newer")
+
+import base64, hashlib, ipaddress, json, os, re, secrets, shutil, signal, socket, ssl, subprocess, threading, time
+from datetime import datetime, timedelta, timezone
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
+
+CRYPTOGRAPHY_MIN_VERSION = (50, 0, 2)
+_crypto_error = None
+try:
+    import cryptography
+    from cryptography import x509
+    from cryptography.exceptions import InvalidKey, InvalidSignature, UnsupportedAlgorithm
+    from cryptography.hazmat.primitives import hashes, serialization
+    from cryptography.hazmat.primitives.asymmetric import ec
+    from cryptography.hazmat.primitives.kdf.argon2 import Argon2id
+    from cryptography.x509.oid import ExtendedKeyUsageOID, NameOID
+
+    _crypto_version = tuple(
+        int(part) for part in cryptography.__version__.split(".")[:3])
+    if _crypto_version < CRYPTOGRAPHY_MIN_VERSION:
+        _crypto_error = RuntimeError(
+            f"cryptography {'.'.join(map(str, CRYPTOGRAPHY_MIN_VERSION))} "
+            f"or newer is required (found {cryptography.__version__})")
+except (ImportError, ValueError) as ex:
+    _crypto_error = ex
+
 try:
     from setproctitle import setproctitle
     setproctitle("pineports")
@@ -19,7 +45,7 @@ except ImportError:
 # Windows keeps the same filenames under %APPDATA%\pineports\; Linux keeps
 # ~/.config/ as before. One base dir, computed once.
 IS_WIN = sys.platform == "win32"
-VERSION = "0.9.1"
+VERSION = "0.10.0"
 ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
 WINDOWS_MANAGER = os.path.join(ROOT_DIR, "windows", "pineports.ps1")
 
@@ -33,8 +59,27 @@ def CONFIG_PATH(fname):
 
 LABELS = CONFIG_PATH("pineports-labels.conf")
 PIN_FILE = CONFIG_PATH("pineports-pin")
+CA_KEY_FILE = CONFIG_PATH("pineports-ca.key")
+CA_CERT_FILE = CONFIG_PATH("pineports-ca.crt")
+TLS_KEY_FILE = CONFIG_PATH("pineports-tls.key")
+TLS_CERT_FILE = CONFIG_PATH("pineports-tls.crt")
 WEB_PORT = 6310
 HOST = socket.gethostname()  # self-identify: page + login name the machine it runs on
+
+ARGON2_MEMORY_COST = 64 * 1024  # KiB (64 MiB)
+ARGON2_ITERATIONS = 3
+ARGON2_LANES = 1
+ARGON2_SALT_LENGTH = 16
+ARGON2_HASH_LENGTH = 32
+_ARGON2_RE = re.compile(
+    r"^\$argon2id\$v=19\$m=(\d+),t=(\d+),p=(\d+)\$"
+    r"([A-Za-z0-9+/]+)\$([A-Za-z0-9+/]+)$")
+_LEGACY_PIN_RE = re.compile(r"^[0-9a-fA-F]{64}$")
+
+TLS_RENEW_BEFORE = timedelta(days=30)
+TLS_CA_VALIDITY = timedelta(days=3650)
+TLS_CERT_VALIDITY = timedelta(days=365)
+_tls_lock = threading.Lock()
 
 # new-listener badge: first-seen times per port; badged for 24h unless the
 # port is labeled (declared expected) or ephemeral (VS Code/Firefox pick
@@ -362,32 +407,125 @@ def win_kill_port(port, expected_pid=None):
             return win_kill_pid(pid, port)
     return f"nothing listening on :{port}"
 
-# ---------- data gathering ----------
+# ---------- authentication / HTTPS ----------
 
-def pin_hash():
-    try:
-        with open(PIN_FILE) as f:
-            return f.read().strip()
-    except FileNotFoundError:
-        return None
+def require_cryptography():
+    """Fail with one actionable message instead of an import traceback."""
+    if _crypto_error is not None:
+        version = ".".join(map(str, CRYPTOGRAPHY_MIN_VERSION))
+        raise RuntimeError(
+            f"PinePort requires cryptography {version} or newer; install it "
+            f"with: \"{sys.executable}\" -m pip install --upgrade "
+            f"\"cryptography>={version}\"") from _crypto_error
 
-def save_pin(pin):
-    if not isinstance(pin, str) or len(pin) != 4 or not pin.isdigit():
-        raise ValueError("PIN must be exactly 4 digits")
-    os.makedirs(os.path.dirname(PIN_FILE), exist_ok=True)
-    tmp = f"{PIN_FILE}.{os.getpid()}.tmp"
+
+def _atomic_write(path, data, mode=0o600):
+    """Write bytes atomically and keep private material owner-readable only."""
+    directory = os.path.dirname(path)
+    if directory:
+        os.makedirs(directory, exist_ok=True)
+    tmp = f"{path}.{os.getpid()}.{secrets.token_hex(4)}.tmp"
     try:
-        fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-        with os.fdopen(fd, "w") as f:
-            f.write(hashlib.sha256(pin.encode()).hexdigest() + "\n")
-        os.replace(tmp, PIN_FILE)
+        fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL, mode)
+        with os.fdopen(fd, "wb") as f:
+            f.write(data)
+        os.chmod(tmp, mode)
+        os.replace(tmp, path)
+        os.chmod(path, mode)
     finally:
         try:
             os.unlink(tmp)
         except FileNotFoundError:
             pass
 
+
+def pin_hash():
+    try:
+        with open(PIN_FILE, encoding="ascii") as f:
+            return f.read().strip()
+    except (FileNotFoundError, UnicodeDecodeError):
+        return None
+
+
+def _decode_phc_part(value):
+    return base64.b64decode(value + "=" * (-len(value) % 4), validate=True)
+
+
+def _parse_argon2_record(record):
+    """Return parameters for a safe PHC record, or None without running it.
+
+    Bounds prevent a corrupt or malicious local PIN file from requesting an
+    unreasonable amount of CPU or memory during login.
+    """
+    match = _ARGON2_RE.fullmatch(record)
+    if not match:
+        return None
+    memory, iterations, lanes = map(int, match.group(1, 2, 3))
+    if not (8 * 1024 <= memory <= 256 * 1024
+            and 1 <= iterations <= 10 and 1 <= lanes <= 4):
+        return None
+    try:
+        salt = _decode_phc_part(match.group(4))
+        derived = _decode_phc_part(match.group(5))
+    except (ValueError, TypeError):
+        return None
+    if not (16 <= len(salt) <= 64 and 16 <= len(derived) <= 64):
+        return None
+    return memory, iterations, lanes, len(salt), len(derived)
+
+
+def _valid_pin(pin):
+    return (isinstance(pin, str) and len(pin) == 4
+            and all("0" <= digit <= "9" for digit in pin))
+
+
+def make_pin_record(pin):
+    if not _valid_pin(pin):
+        raise ValueError("PIN must be exactly 4 digits")
+    require_cryptography()
+    try:
+        kdf = Argon2id(
+            salt=secrets.token_bytes(ARGON2_SALT_LENGTH),
+            length=ARGON2_HASH_LENGTH,
+            iterations=ARGON2_ITERATIONS,
+            lanes=ARGON2_LANES,
+            memory_cost=ARGON2_MEMORY_COST,
+        )
+        return kdf.derive_phc_encoded(pin.encode("ascii"))
+    except UnsupportedAlgorithm as ex:
+        raise RuntimeError(
+            "this cryptography installation does not provide Argon2id") from ex
+
+
+def _verify_pin_record(pin, record):
+    """Return (matches, should_upgrade) for Argon2id and legacy SHA-256."""
+    if not _valid_pin(pin) or not isinstance(record, str):
+        return False, False
+    params = _parse_argon2_record(record)
+    if params is not None:
+        require_cryptography()
+        try:
+            Argon2id.verify_phc_encoded(pin.encode("ascii"), record)
+        except (InvalidKey, ValueError, UnsupportedAlgorithm):
+            return False, False
+        current = (ARGON2_MEMORY_COST, ARGON2_ITERATIONS, ARGON2_LANES,
+                   ARGON2_SALT_LENGTH, ARGON2_HASH_LENGTH)
+        return True, params != current
+    if _LEGACY_PIN_RE.fullmatch(record):
+        legacy = hashlib.sha256(pin.encode("ascii")).hexdigest()
+        return secrets.compare_digest(legacy, record.lower()), True
+    return False, False
+
+
+def save_pin(pin):
+    record = make_pin_record(pin)
+    _atomic_write(PIN_FILE, (record + "\n").encode("ascii"))
+
 def set_pin():
+    try:
+        require_cryptography()  # fail before prompting for a PIN we cannot store
+    except RuntimeError as ex:
+        raise SystemExit(str(ex)) from None
     from getpass import getpass
     pin = getpass("Dashboard PIN (4 digits): ")
     confirm = getpass("Confirm PIN: ")
@@ -395,11 +533,11 @@ def set_pin():
         raise SystemExit("PINs do not match")
     try:
         save_pin(pin)
-    except ValueError as ex:
+    except (ValueError, RuntimeError) as ex:
         raise SystemExit(str(ex))
     print(f"PIN saved to {PIN_FILE}")
 
-SESSIONS = {}  # auth token -> PIN hash; changing the PIN revokes old sessions
+SESSIONS = {}  # auth token -> PIN record; changing the PIN revokes old sessions
 
 # Login throttle is global, not per-request: the threaded server would let
 # parallel guesses each sleep on their own thread, so a 4-digit PIN falls in
@@ -418,8 +556,14 @@ def try_login(pin):
         if time.time() < _login_locked_until:
             return "locked"
         want = pin_hash()
-        if want and secrets.compare_digest(
-                hashlib.sha256(pin.encode()).hexdigest(), want):
+        matched, should_upgrade = _verify_pin_record(pin, want)
+        if matched:
+            if should_upgrade:
+                try:
+                    save_pin(pin)
+                except OSError as ex:
+                    print(f"warning: could not upgrade PIN record: {ex}",
+                          file=sys.stderr)
             _login_fails = 0
             return "ok"
         _login_fails += 1
@@ -439,6 +583,242 @@ def check_auth(handler):
                 return True
             SESSIONS.pop(token, None)
     return False
+
+
+def _public_key_bytes(key):
+    return key.public_bytes(serialization.Encoding.DER,
+                            serialization.PublicFormat.SubjectPublicKeyInfo)
+
+
+def _read_certificate(path):
+    with open(path, "rb") as f:
+        return x509.load_pem_x509_certificate(f.read())
+
+
+def _read_private_key(path):
+    with open(path, "rb") as f:
+        return serialization.load_pem_private_key(f.read(), password=None)
+
+
+def _dns_name(value):
+    value = value.strip().rstrip(".")
+    if not value or len(value) > 253 or any(part == "" for part in value.split(".")):
+        return None
+    try:
+        return value.encode("idna").decode("ascii").lower()
+    except UnicodeError:
+        return None
+
+
+def tls_subject_names():
+    """Return DNS names and IP addresses the local certificate should cover."""
+    dns_names = {"localhost"}
+    ip_addresses = {ipaddress.ip_address("127.0.0.1"),
+                    ipaddress.ip_address("::1")}
+    for value in (HOST, socket.getfqdn()):
+        name = _dns_name(value)
+        if name:
+            dns_names.add(name)
+    try:
+        answers = socket.getaddrinfo(HOST, None, type=socket.SOCK_STREAM)
+    except socket.gaierror:
+        answers = []
+    for _family, _type, _proto, _canonname, sockaddr in answers:
+        try:
+            ip_addresses.add(ipaddress.ip_address(sockaddr[0].split("%", 1)[0]))
+        except ValueError:
+            pass
+    # Hostname resolution often returns only /etc/hosts entries. Add addresses
+    # from the platform's interface inventory so LAN/VPN URLs match too.
+    interface_values = []
+    if IS_WIN and _psutil:
+        try:
+            interface_values = [address.address
+                                for entries in _psutil.net_if_addrs().values()
+                                for address in entries]
+        except Exception:
+            pass
+    elif not IS_WIN:
+        try:
+            result = subprocess.run(["hostname", "-I"], capture_output=True,
+                                    text=True, timeout=2)
+            if result.returncode == 0:
+                interface_values = result.stdout.split()
+        except (OSError, subprocess.TimeoutExpired):
+            pass
+    for value in interface_values:
+        try:
+            ip_addresses.add(ipaddress.ip_address(value.split("%", 1)[0]))
+        except ValueError:
+            pass
+    for value in re.split(r"[,\s]+", os.environ.get("PINEPORT_TLS_NAMES", "")):
+        if not value:
+            continue
+        try:
+            ip_addresses.add(ipaddress.ip_address(value.strip("[]").split("%", 1)[0]))
+        except ValueError:
+            name = _dns_name(value)
+            if name:
+                dns_names.add(name)
+    return (sorted(dns_names),
+            sorted(ip_addresses, key=lambda address: (address.version, str(address))))
+
+
+def _certificate_paths_exist(*paths):
+    return all(os.path.isfile(path) for path in paths)
+
+
+def _valid_ca(certificate, private_key, now):
+    try:
+        constraints = certificate.extensions.get_extension_for_class(
+            x509.BasicConstraints).value
+        certificate.verify_directly_issued_by(certificate)
+        return (constraints.ca and constraints.path_length == 0
+                and certificate.not_valid_before_utc <= now
+                and certificate.not_valid_after_utc > now + TLS_RENEW_BEFORE
+                and _public_key_bytes(certificate.public_key())
+                == _public_key_bytes(private_key.public_key()))
+    except (ValueError, TypeError, InvalidSignature, x509.ExtensionNotFound):
+        return False
+
+
+def _valid_server_certificate(certificate, private_key, ca_certificate,
+                              dns_names, ip_addresses, now):
+    try:
+        certificate.verify_directly_issued_by(ca_certificate)
+        constraints = certificate.extensions.get_extension_for_class(
+            x509.BasicConstraints).value
+        usages = certificate.extensions.get_extension_for_class(
+            x509.ExtendedKeyUsage).value
+        san = certificate.extensions.get_extension_for_class(
+            x509.SubjectAlternativeName).value
+        cert_dns = {name.lower() for name in san.get_values_for_type(x509.DNSName)}
+        cert_ips = set(san.get_values_for_type(x509.IPAddress))
+        return (not constraints.ca
+                and ExtendedKeyUsageOID.SERVER_AUTH in usages
+                and certificate.not_valid_before_utc <= now
+                and certificate.not_valid_after_utc > now + TLS_RENEW_BEFORE
+                and set(dns_names).issubset(cert_dns)
+                and set(ip_addresses).issubset(cert_ips)
+                and _public_key_bytes(certificate.public_key())
+                == _public_key_bytes(private_key.public_key()))
+    except (ValueError, TypeError, InvalidSignature, x509.ExtensionNotFound):
+        return False
+
+
+def _new_ca(now):
+    key = ec.generate_private_key(ec.SECP256R1())
+    subject = x509.Name([
+        x509.NameAttribute(NameOID.ORGANIZATION_NAME, "PinePort"),
+        x509.NameAttribute(NameOID.COMMON_NAME,
+                           f"PinePort Local CA ({HOST})"),
+    ])
+    certificate = (
+        x509.CertificateBuilder()
+        .subject_name(subject)
+        .issuer_name(subject)
+        .public_key(key.public_key())
+        .serial_number(x509.random_serial_number())
+        .not_valid_before(now - timedelta(minutes=5))
+        .not_valid_after(now + TLS_CA_VALIDITY)
+        .add_extension(x509.BasicConstraints(ca=True, path_length=0),
+                       critical=True)
+        .add_extension(x509.KeyUsage(
+            digital_signature=True, content_commitment=False,
+            key_encipherment=False, data_encipherment=False,
+            key_agreement=False, key_cert_sign=True, crl_sign=True,
+            encipher_only=None, decipher_only=None), critical=True)
+        .add_extension(x509.SubjectKeyIdentifier.from_public_key(
+            key.public_key()), critical=False)
+        .sign(key, hashes.SHA256()))
+    return certificate, key
+
+
+def _new_server_certificate(ca_certificate, ca_key, dns_names, ip_addresses,
+                            now):
+    key = ec.generate_private_key(ec.SECP256R1())
+    subject = x509.Name([
+        x509.NameAttribute(NameOID.ORGANIZATION_NAME, "PinePort"),
+        x509.NameAttribute(NameOID.COMMON_NAME, dns_names[0]),
+    ])
+    san_names = ([x509.DNSName(name) for name in dns_names]
+                 + [x509.IPAddress(address) for address in ip_addresses])
+    not_after = min(now + TLS_CERT_VALIDITY,
+                    ca_certificate.not_valid_after_utc - timedelta(minutes=1))
+    certificate = (
+        x509.CertificateBuilder()
+        .subject_name(subject)
+        .issuer_name(ca_certificate.subject)
+        .public_key(key.public_key())
+        .serial_number(x509.random_serial_number())
+        .not_valid_before(now - timedelta(minutes=5))
+        .not_valid_after(not_after)
+        .add_extension(x509.BasicConstraints(ca=False, path_length=None),
+                       critical=True)
+        .add_extension(x509.KeyUsage(
+            digital_signature=True, content_commitment=False,
+            key_encipherment=False, data_encipherment=False,
+            key_agreement=False, key_cert_sign=False, crl_sign=False,
+            encipher_only=None, decipher_only=None), critical=True)
+        .add_extension(x509.ExtendedKeyUsage(
+            [ExtendedKeyUsageOID.SERVER_AUTH]), critical=False)
+        .add_extension(x509.SubjectAlternativeName(san_names), critical=False)
+        .add_extension(x509.SubjectKeyIdentifier.from_public_key(
+            key.public_key()), critical=False)
+        .add_extension(x509.AuthorityKeyIdentifier.from_issuer_public_key(
+            ca_key.public_key()), critical=False)
+        .sign(ca_key, hashes.SHA256()))
+    return certificate, key
+
+
+def _write_key(path, key):
+    _atomic_write(path, key.private_bytes(
+        serialization.Encoding.PEM,
+        serialization.PrivateFormat.PKCS8,
+        serialization.NoEncryption()), 0o600)
+
+
+def _write_certificate(path, certificate):
+    _atomic_write(path, certificate.public_bytes(serialization.Encoding.PEM),
+                  0o644)
+
+
+def ensure_tls_certificate():
+    """Create or renew the persistent local CA and HTTPS certificate."""
+    require_cryptography()
+    with _tls_lock:
+        now = datetime.now(timezone.utc)
+        ca_certificate = ca_key = None
+        if _certificate_paths_exist(CA_CERT_FILE, CA_KEY_FILE):
+            try:
+                candidate_cert = _read_certificate(CA_CERT_FILE)
+                candidate_key = _read_private_key(CA_KEY_FILE)
+                if _valid_ca(candidate_cert, candidate_key, now):
+                    ca_certificate, ca_key = candidate_cert, candidate_key
+            except (OSError, ValueError, TypeError):
+                pass
+        if ca_certificate is None:
+            ca_certificate, ca_key = _new_ca(now)
+            _write_key(CA_KEY_FILE, ca_key)
+            _write_certificate(CA_CERT_FILE, ca_certificate)
+
+        dns_names, ip_addresses = tls_subject_names()
+        server_valid = False
+        if _certificate_paths_exist(TLS_CERT_FILE, TLS_KEY_FILE):
+            try:
+                server_certificate = _read_certificate(TLS_CERT_FILE)
+                server_key = _read_private_key(TLS_KEY_FILE)
+                server_valid = _valid_server_certificate(
+                    server_certificate, server_key, ca_certificate,
+                    dns_names, ip_addresses, now)
+            except (OSError, ValueError, TypeError):
+                pass
+        if not server_valid:
+            server_certificate, server_key = _new_server_certificate(
+                ca_certificate, ca_key, dns_names, ip_addresses, now)
+            _write_key(TLS_KEY_FILE, server_key)
+            _write_certificate(TLS_CERT_FILE, server_certificate)
+        return TLS_CERT_FILE, TLS_KEY_FILE, CA_CERT_FILE
 
 # ---------- data gathering ----------
 
@@ -2098,7 +2478,7 @@ startupToggle.onclick=async()=>{
 pinForm.onsubmit=async e=>{e.preventDefault();settingsMessage('');
  const current=document.querySelector('#pin-current').value,next=document.querySelector('#pin-new').value,
   confirmPin=document.querySelector('#pin-confirm').value;
- if(!/^\d{4}$/.test(current)||!/^\d{4}$/.test(next)){settingsMessage('PINs must be exactly four digits.',true);return}
+ if(!/^\\d{4}$/.test(current)||!/^\\d{4}$/.test(next)){settingsMessage('PINs must be exactly four digits.',true);return}
  if(next!==confirmPin){settingsMessage('New PINs do not match.',true);return}
  const submit=pinForm.querySelector('button');submit.disabled=true;
  try{await apiJson('/api/settings/pin',{method:'POST',headers:{'Content-Type':'application/json'},
@@ -2306,15 +2686,22 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         if self.path == "/api/login":
-            n = int(self.headers.get("Content-Length", 0))
-            pin = self.rfile.read(n).decode().strip()
+            try:
+                n = int(self.headers.get("Content-Length", 0))
+                if n < 1 or n > 64:
+                    raise ValueError
+                pin = self.rfile.read(n).decode("ascii").strip()
+            except (TypeError, ValueError, UnicodeDecodeError):
+                self._send(400, "invalid login request", "text/plain")
+                return
             res = try_login(pin)
             if res == "ok":
                 tok = secrets.token_hex(32)
-                SESSIONS[tok] = hashlib.sha256(pin.encode()).hexdigest()
+                SESSIONS[tok] = pin_hash() or ""
                 self.send_response(200)
                 self.send_header("Set-Cookie",
-                                 f"ports_auth={tok}; Path=/; Max-Age=2592000; HttpOnly; SameSite=Lax")
+                                 f"ports_auth={tok}; Path=/; Max-Age=2592000; "
+                                 "Secure; HttpOnly; SameSite=Lax")
                 self.end_headers()
             elif res == "locked":
                 self._send(429, "too many tries, wait a few minutes", "text/plain")
@@ -2357,8 +2744,7 @@ class Handler(BaseHTTPRequestHandler):
             except (ValueError, KeyError, TypeError, json.JSONDecodeError):
                 self._send_json(400, {"error": "invalid PIN change request"})
                 return
-            if any(len(pin) != 4 or not pin.isdigit()
-                   for pin in (current, new, confirm)):
+            if any(not _valid_pin(pin) for pin in (current, new, confirm)):
                 self._send_json(400, {"error": "PINs must be exactly four digits"})
                 return
             if new != confirm:
@@ -2374,7 +2760,7 @@ class Handler(BaseHTTPRequestHandler):
                 return
             try:
                 save_pin(new)
-            except (OSError, ValueError) as ex:
+            except (OSError, ValueError, RuntimeError) as ex:
                 self._send_json(500, {"error": str(ex)})
                 return
             self._send_json(200, {"ok": True})
@@ -2398,9 +2784,49 @@ class Handler(BaseHTTPRequestHandler):
     def log_message(self, *a):
         pass
 
+class TLSThreadingHTTPServer(ThreadingHTTPServer):
+    """Threaded HTTP server whose only accepted protocol is TLS."""
+    daemon_threads = True
+
+    def __init__(self, server_address, handler_class, tls_context):
+        self.tls_context = tls_context
+        super().__init__(server_address, handler_class)
+
+    def get_request(self):
+        request, address = super().get_request()
+        try:
+            # Defer the handshake to the request thread so one stalled client
+            # cannot prevent other TLS clients from being accepted.
+            request = self.tls_context.wrap_socket(
+                request, server_side=True, do_handshake_on_connect=False)
+            return request, address
+        except Exception:
+            request.close()
+            raise
+
+    def handle_error(self, request, client_address):
+        if isinstance(sys.exc_info()[1], ssl.SSLError):
+            return  # Expected when someone tries plaintext HTTP on this port.
+        super().handle_error(request, client_address)
+
+
+def create_https_server(address=("0.0.0.0", WEB_PORT)):
+    certificate, private_key, _ca_certificate = ensure_tls_certificate()
+    context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+    context.minimum_version = ssl.TLSVersion.TLSv1_2
+    context.options |= ssl.OP_NO_COMPRESSION
+    context.load_cert_chain(certificate, private_key)
+    return TLSThreadingHTTPServer(address, Handler, context)
+
+
 def web():
-    print(f"ports web UI on http://0.0.0.0:{WEB_PORT}/")
-    ThreadingHTTPServer(("0.0.0.0", WEB_PORT), Handler).serve_forever()
+    try:
+        server = create_https_server()
+    except RuntimeError as ex:
+        raise SystemExit(str(ex)) from ex
+    print(f"PinePort HTTPS UI on https://{HOST}:{WEB_PORT}/")
+    print(f"Local CA certificate: {CA_CERT_FILE}")
+    server.serve_forever()
 
 if __name__ == "__main__":
     if len(sys.argv) >= 2:

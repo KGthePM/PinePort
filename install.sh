@@ -10,6 +10,8 @@ set -euo pipefail
 
 BIN="$HOME/.local/bin"
 CONF="$HOME/.config"
+DATA="$HOME/.local/share/pineports"
+VENV="$DATA/venv"
 UNIT_DIR="$CONF/systemd/user"
 PIN_FILE="$CONF/pineports-pin"
 SRC="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -28,19 +30,27 @@ ask_yn() {  # ask_yn "question" -> 0 on yes (default no)
 # ports-wrapper is ours if it execs pineports; never clobber some other `ports`
 is_our_wrapper() { [[ ! -e $1 ]] || grep -q pineports "$1" 2>/dev/null; }
 
+ensure_runtime() {
+    python3 -c 'import sys; raise SystemExit(sys.version_info < (3, 11))' ||
+        die "PinePort requires Python 3.11 or newer"
+
+    if [[ ! -x $VENV/bin/python ]] ||
+       ! "$VENV/bin/python" -c 'import sys; raise SystemExit(sys.version_info < (3, 11))' 2>/dev/null; then
+        say "Creating PinePort Python environment"
+        mkdir -p "$DATA"
+        python3 -m venv --clear "$VENV" ||
+            die "could not create a virtual environment (install python3-venv and retry)"
+    fi
+
+    if ! "$VENV/bin/python" -c 'import cryptography; from cryptography.hazmat.primitives.kdf.argon2 import Argon2id; Argon2id(salt=b"0"*16,length=16,iterations=1,lanes=1,memory_cost=8).derive(b"x"); ok=tuple(map(int, cryptography.__version__.split(".")[:3])) >= (50,0,2); raise SystemExit(not ok)' 2>/dev/null; then
+        say "Installing the PinePort cryptography dependency"
+        "$VENV/bin/python" -m pip install --upgrade 'cryptography>=50.0.2' ||
+            die "could not install cryptography>=50.0.2"
+    fi
+}
+
 set_pin() {
-    local p1 p2
-    while :; do
-        read -r -s -p "Choose a PIN for the web dashboard: " p1 </dev/tty; echo
-        [[ -n $p1 ]] || { warn "PIN can't be empty"; continue; }
-        read -r -s -p "Repeat PIN: " p2 </dev/tty; echo
-        [[ $p1 == "$p2" ]] && break
-        warn "PINs didn't match, try again"
-    done
-    # sha256 of the PIN with no trailing newline, readable only by you
-    (umask 077; printf '%s' "$p1" | sha256sum | cut -d' ' -f1 > "$PIN_FILE")
-    chmod 600 "$PIN_FILE"
-    say "PIN saved (hashed) to $PIN_FILE"
+    "$VENV/bin/python" "$BIN/pineports" --set-pin </dev/tty
 }
 
 uninstall() {
@@ -50,13 +60,17 @@ uninstall() {
     systemctl --user daemon-reload
 
     rm -f "$BIN/pineports" "$BIN/pineports-docker" "$BIN/pineports-gpu" "$BIN/pineports-uninstall"
+    rm -rf "$VENV"
+    rmdir "$DATA" 2>/dev/null || true
     say "Removed pineports, pineports-docker, pineports-gpu and pineports-uninstall from $BIN"
     if is_our_wrapper "$BIN/ports"; then rm -f "$BIN/ports"
     else warn "Left $BIN/ports alone (not PinePort's wrapper)"; fi
 
-    if ask_yn "Also delete your PIN, labels and port history in $CONF?"; then
+    if ask_yn "Also delete your PIN, HTTPS identity, labels and port history in $CONF?"; then
         rm -f "$PIN_FILE" "$CONF/pineports-labels.conf" \
-              "$CONF/pineports-seen.json" "$CONF/pineports-seen.json.tmp"
+              "$CONF/pineports-seen.json" "$CONF/pineports-seen.json.tmp" \
+              "$CONF/pineports-ca.key" "$CONF/pineports-ca.crt" \
+              "$CONF/pineports-tls.key" "$CONF/pineports-tls.crt"
         say "Config deleted"
     else
         say "Kept config in $CONF/pineports-*"
@@ -76,11 +90,16 @@ do_install() {
     for f in pineports pineports-docker pineports-gpu ports-wrapper systemd/pineports.service; do
         [[ -f $SRC/$f ]] || die "missing $f — run this from a PinePort checkout"
     done
+    ensure_runtime
 
     mkdir -p "$BIN" "$UNIT_DIR"
 
     say "Installing to $BIN"
     install -m 755 "$SRC/pineports" "$SRC/pineports-docker" "$SRC/pineports-gpu" "$BIN/"
+    # Keep installed commands on the private environment that owns their
+    # required cryptography package.
+    { printf '#!%s\n' "$VENV/bin/python"; tail -n +2 "$SRC/pineports"; } > "$BIN/pineports"
+    chmod 755 "$BIN/pineports"
     install -m 755 "$SRC/install.sh" "$BIN/pineports-uninstall"
     if is_our_wrapper "$BIN/ports"; then install -m 755 "$SRC/ports-wrapper" "$BIN/ports"
     else warn "$BIN/ports already exists and isn't PinePort's — skipped the 'ports' alias"; fi
@@ -124,9 +143,10 @@ do_install() {
     fi
 
     echo
-    say "Done. Dashboard: http://$(hostname):6310"
+    say "Done. Dashboard: https://$(hostname):6310"
     local ip; ip=$(hostname -I 2>/dev/null | awk '{print $1}')
-    if [[ -n $ip ]]; then say "      or:        http://$ip:6310"; fi
+    if [[ -n $ip ]]; then say "      or:        https://$ip:6310"; fi
+    say "Local CA certificate: $CONF/pineports-ca.crt"
     say "CLI: pineports   |   kill: pineports kill <port>"
 }
 

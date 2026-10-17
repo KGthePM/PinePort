@@ -16,7 +16,7 @@ $pidFile = Join-Path $configDir 'pineports.pid'
 $stdoutLog = Join-Path $configDir 'pineports.stdout.log'
 $stderrLog = Join-Path $configDir 'pineports.stderr.log'
 $webPort = 6310
-$dashboardUrl = "http://localhost:$webPort/"
+$dashboardUrl = "https://localhost:$webPort/"
 $startupDirectory = [Environment]::GetFolderPath([Environment+SpecialFolder]::Startup)
 $startupShortcut = if ($startupDirectory) {
     Join-Path $startupDirectory 'PinePort.lnk'
@@ -25,35 +25,78 @@ $startupShortcut = if ($startupDirectory) {
 }
 
 function Resolve-Python3 {
+    # Probes run outside PowerShell's stderr pipeline: with
+    # $ErrorActionPreference = 'Stop', PowerShell 5.1 turns a native command's
+    # first stderr line (e.g. a Python ImportError traceback or the Store
+    # stub's "Python was not found") into a terminating NativeCommandError,
+    # even when redirected to $null. System.Diagnostics.Process keeps that
+    # output contained so exit codes are all we look at.
+    $versionProbe = 'import sys; raise SystemExit(sys.version_info < (3, 11))'
+    $dependencyProbe = (
+        'import cryptography, psutil; ' +
+        'from cryptography.hazmat.primitives.kdf.argon2 import Argon2id; ' +
+        "Argon2id(salt=b'0'*16,length=16,iterations=1,lanes=1,memory_cost=8).derive(b'x'); " +
+        "raise SystemExit(tuple(map(int, cryptography.__version__.split(chr(46))[:3])) < (50, 0, 2))")
+
+    function Invoke-PythonProbe {
+        param($File, [string[]]$Prefix, [string]$Code)
+        $arguments = ((@($Prefix) + @('-c', $Code)) | ForEach-Object {
+            if ($_ -match '\s') { '"' + $_ + '"' } else { $_ }
+        }) -join ' '
+        $psi = [System.Diagnostics.ProcessStartInfo]@{
+            FileName = $File
+            Arguments = $arguments
+            UseShellExecute = $false
+            CreateNoWindow = $true
+            RedirectStandardOutput = $true
+            RedirectStandardError = $true
+        }
+        try {
+            $process = [System.Diagnostics.Process]::Start($psi)
+        } catch {
+            return $false
+        }
+        try {
+            if (-not $process.WaitForExit(15000)) {
+                try { $process.Kill() } catch { }
+                return $false
+            }
+            return ($process.ExitCode -eq 0)
+        } finally {
+            $process.Dispose()
+        }
+    }
+
     $candidates = @(Get-Command python.exe -All -ErrorAction SilentlyContinue |
         ForEach-Object { [pscustomobject]@{ File = $_.Source; Prefix = @() } })
     $launcher = Get-Command py.exe -ErrorAction SilentlyContinue
     if ($launcher) {
-        $candidates += [pscustomobject]@{ File = $launcher.Source; Prefix = @('-3') }
+        foreach ($selector in @('-3', '-3.14', '-3.13', '-3.12', '-3.11')) {
+            $candidates += [pscustomobject]@{
+                File = $launcher.Source
+                Prefix = @($selector)
+            }
+        }
     }
 
     $fallback = $null
     foreach ($candidate in $candidates) {
-        $versionArgs = @($candidate.Prefix) + @(
-            '-c', 'import sys; raise SystemExit(sys.version_info < (3, 8))')
-        & $candidate.File @versionArgs 2>$null
-        if ($LASTEXITCODE -eq 0) {
-            if (-not $fallback) { $fallback = $candidate }
-            # Avoid an ImportError traceback: Windows PowerShell 5.1 treats
-            # native stderr as terminating when ErrorActionPreference is Stop.
-            $psutilArgs = @($candidate.Prefix) + @(
-                '-c', "import importlib.util; raise SystemExit(importlib.util.find_spec('psutil') is None)")
-            & $candidate.File @psutilArgs 2>$null
-            if ($LASTEXITCODE -eq 0) { return $candidate }
+        if (-not (Invoke-PythonProbe $candidate.File $candidate.Prefix $versionProbe)) {
+            continue
+        }
+        if (-not $fallback) { $fallback = $candidate }
+        if (Invoke-PythonProbe $candidate.File $candidate.Prefix $dependencyProbe) {
+            return $candidate
         }
     }
 
     if ($fallback) {
-        $installArgs = @($fallback.Prefix) + @('-m', 'pip', 'install', 'psutil')
-        throw ('psutil is not installed for any available Python 3.8+. Run: "' +
+        $installArgs = @($fallback.Prefix) + @(
+            '-m', 'pip', 'install', '--upgrade', 'psutil', '"cryptography>=50.0.2"')
+        throw ('PinePort dependencies are not installed for any available Python 3.11+. Run: "' +
                $fallback.File + '" ' + ($installArgs -join ' '))
     }
-    throw 'Python 3.8 or newer was not found on PATH.'
+    throw 'Python 3.11 or newer was not found on PATH.'
 }
 
 function Test-PinePortProcess {
